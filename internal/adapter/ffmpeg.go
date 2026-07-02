@@ -19,6 +19,7 @@ import (
 type FFmpegAdapter interface {
 	Probe(ctx context.Context, path string) (*model.MediaFile, error)
 	ExtractWaveform(ctx context.Context, mediaPath, outPng string) error
+	ExtractAudio16kWav(ctx context.Context, mediaPath, outWav string) error
 	ExtractWaveformPeaks(ctx context.Context, mediaPath string, durationMs int64, buckets int) (*model.WaveformPeaks, error)
 	ConcatLossless(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string) error
 	ConcatReencode(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string, opts model.EncodeOpts) error
@@ -151,6 +152,31 @@ func (a *ffmpegAdapter) ExtractWaveform(ctx context.Context, mediaPath, outPng s
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg waveform: %w", err)
+	}
+	return nil
+}
+
+// ExtractAudio16kWav 提取音频并转码为 16kHz 单声道 PCM wav（whisper.cpp 要求的输入格式）
+func (a *ffmpegAdapter) ExtractAudio16kWav(ctx context.Context, mediaPath, outWav string) error {
+	binaryPath, err := a.resolver.Resolve("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg extract audio: %w", err)
+	}
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binaryPath,
+		"-i", mediaPath,
+		"-vn",
+		"-ac", "1",
+		"-ar", "16000",
+		"-acodec", "pcm_s16le",
+		"-y",
+		outWav,
+	)
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg extract audio: %w (stderr: %s)", err, stderr.String())
 	}
 	return nil
 }

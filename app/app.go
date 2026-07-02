@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -51,6 +52,17 @@ func (a *App) CreateProject(name, mediaPath string) (*model.Project, error) {
 	project, err := a.projectService.CreateProject(name, mediaPath)
 	if err != nil {
 		return nil, NewAppError(ErrCodeInternal, "创建项目失败", err.Error())
+	}
+
+	// 探测媒体元数据（时长、分辨率、帧率、是否有音轨），填充后重新保存
+	media, err := a.transcribeService.ProbeMedia(context.Background(), project.Media.Path)
+	if err != nil {
+		return nil, NewAppError(ErrCodeEnv, "媒体文件探测失败", err.Error())
+	}
+	media.Path = project.Media.Path
+	project.Media = *media
+	if err := a.projectService.SaveProject(project); err != nil {
+		return nil, NewAppError(ErrCodeInternal, "保存项目元数据失败", err.Error())
 	}
 
 	a.mu.Lock()
@@ -106,7 +118,8 @@ func (a *App) GetProject(projectID string) (*model.Project, error) {
 func (a *App) GetCutList(projectID string) (*model.CutList, error) {
 	cl, err := a.editService.GetCutList(projectID)
 	if err != nil {
-		return nil, NewAppError(ErrCodeInternal, "获取剪切清单失败", err.Error())
+		// 未分析是正常的初始状态，返回 nil 而非错误（避免 wails 刷 ERR 日志）
+		return nil, nil
 	}
 	return cl, nil
 }

@@ -21,6 +21,9 @@ type AppError struct {
 }
 
 func (e *AppError) Error() string {
+	if e.Detail != "" {
+		return fmt.Sprintf("[%s] %s: %s", e.Code, e.Message, e.Detail)
+	}
 	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 	"path/filepath"
 
 	"smart-cut/internal/model"
@@ -23,7 +24,13 @@ func (a *App) StartTranscribe(projectID string) (string, error) {
 		return "", NewAppError(ErrCodeEnv, "未配置 Whisper 模型目录，请先在设置中配置", "")
 	}
 
-	taskID := a.transcribeService.StartTranscribe(project, modelPath)
+	resolved, err := resolveWhisperModel(modelPath)
+	if err != nil {
+		return "", NewAppError(ErrCodeEnv, "Whisper 模型解析失败", err.Error())
+	}
+
+	log.Printf("[App] StartTranscribe: projectID=%s model=%s media=%s", projectID, resolved, project.Media.Path)
+	taskID := a.transcribeService.StartTranscribe(project, resolved)
 	return taskID, nil
 }
 
@@ -38,6 +45,30 @@ func (a *App) StartAnalyze(projectID string) (string, error) {
 		return "", NewAppError(ErrCodeParam, "转录结果不存在，请先完成转录", err.Error())
 	}
 
+	// LLM 配置：项目级为空时回退用全局 defaultLLM
+	if project.Settings.LLMConfig.BaseURL == "" || project.Settings.LLMConfig.APIKey == "" || project.Settings.LLMConfig.Model == "" {
+		settings, err := a.configManager.Load()
+		if err != nil {
+			return "", NewAppError(ErrCodeEnv, "加载设置失败", err.Error())
+		}
+		log.Printf("[App] StartAnalyze: 项目级 LLMConfig 不完整，回退全局 defaultLLM (model=%s)", settings.DefaultLLM.Model)
+		if project.Settings.LLMConfig.BaseURL == "" {
+			project.Settings.LLMConfig.BaseURL = settings.DefaultLLM.BaseURL
+		}
+		if project.Settings.LLMConfig.APIKey == "" {
+			project.Settings.LLMConfig.APIKey = settings.DefaultLLM.APIKey
+		}
+		if project.Settings.LLMConfig.Model == "" {
+			project.Settings.LLMConfig.Model = settings.DefaultLLM.Model
+		}
+	}
+	// 最终校验：API Key 仍为空则提前报错（避免 LLM 请求静默失败）
+	if project.Settings.LLMConfig.APIKey == "" {
+		log.Printf("[App] StartAnalyze: API Key 为空，拒绝启动分析")
+		return "", NewAppError(ErrCodeLLM, "未配置 LLM API Key", "请在设置页填写 LLM API Key 后重试")
+	}
+
+	log.Printf("[App] StartAnalyze: projectID=%s transcriptSegs=%d llmModel=%s", projectID, len(transcript.Segments), project.Settings.LLMConfig.Model)
 	taskID := a.analyzeService.StartAnalyze(project, transcript)
 	return taskID, nil
 }
@@ -60,7 +91,8 @@ func (a *App) StartExport(projectID string, opts model.ExportOptions) (string, e
 func (a *App) GetTranscript(projectID string) (*model.Transcript, error) {
 	t, err := a.transcribeService.GetTranscript(projectID)
 	if err != nil {
-		return nil, NewAppError(ErrCodeInternal, "获取转录结果失败", err.Error())
+		// 未转录是正常的初始状态，返回 nil 而非错误（避免 wails 刷 ERR 日志）
+		return nil, nil
 	}
 	return t, nil
 }

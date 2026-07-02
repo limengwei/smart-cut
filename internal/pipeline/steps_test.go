@@ -23,6 +23,11 @@ func (m *mockWhisperAdapter) Transcribe(ctx context.Context, mediaPath string, o
 	return m.transcript, nil
 }
 
+func (m *mockWhisperAdapter) TranscribeStream(ctx context.Context, mediaPath string, opts adapter.WhisperOptions,
+	onProgress func(progress float64), onSegment func(seg model.Segment)) (*model.Transcript, error) {
+	return m.Transcribe(ctx, mediaPath, opts)
+}
+
 type mockLLMAdapter struct {
 	result *model.LLMAnalysisResult
 	err    error
@@ -33,6 +38,10 @@ func (m *mockLLMAdapter) Analyze(ctx context.Context, req model.LLMAnalysisReque
 		return nil, m.err
 	}
 	return m.result, nil
+}
+
+func (m *mockLLMAdapter) AnalyzeStream(ctx context.Context, req model.LLMAnalysisRequest, cfg model.LLMConfig, onToken func(delta string)) (*model.LLMAnalysisResult, error) {
+	return m.Analyze(ctx, req, cfg)
 }
 
 func TestAnalyzeStep_Run_Success(t *testing.T) {
@@ -156,6 +165,6 @@ func TestSubtitleStep_Run_MVPSkips(t *testing.T) {
 }
 
 func TestTranscribeStep_Name(t *testing.T) {
-	step := NewTranscribeStep(nil, nil, adapter.WhisperOptions{})
+	step := NewTranscribeStep(nil, nil, adapter.WhisperOptions{}, nil)
 	assert.Equal(t, "transcribe", step.Name())
 }
