@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Transcript, CutList, WaveformPeaks } from "../api/types";
+import type { Transcript, CutList, WaveformPeaks, Segment } from "../api/types";
 
 export type WorkflowStage = "idle" | "transcribing" | "analyzing" | "ready" | "exporting";
 
@@ -27,6 +27,7 @@ interface WorkbenchStore {
 
   setProjectID: (id: string) => void;
   setTranscript: (t: Transcript | null) => void;
+  appendSegment: (seg: Segment) => void;
   setCutList: (c: CutList | null) => void;
   setPeaks: (p: WaveformPeaks | null) => void;
   setMediaURL: (u: string | null) => void;
@@ -74,6 +75,13 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
 
   setProjectID: (id) => set({ projectID: id }),
   setTranscript: (t) => set({ transcript: t }),
+  appendSegment: (seg) =>
+    set((state) => {
+      if (!state.transcript) {
+        return { transcript: { language: "", text: "", segments: [seg] } };
+      }
+      return { transcript: { ...state.transcript, segments: [...state.transcript.segments, seg] } };
+    }),
   setCutList: (c) => set({ cutList: c }),
   setPeaks: (p) => set({ peaks: p }),
   setMediaURL: (u) => set({ mediaURL: u }),

@@ -1,5 +1,5 @@
 import { Events } from "@wailsio/runtime";
-import type { ProgressEvent, Transcript, CutList } from "./types";
+import type { ProgressEvent, Transcript, CutList, Segment } from "./types";
 
 interface WailsEventPayload {
   name: string;
@@ -13,6 +13,10 @@ export function onProgress(cb: (event: ProgressEvent) => void): () => void {
 
 export function onTranscriptReady(cb: (transcript: Transcript) => void): () => void {
   return Events.On("transcript:ready", ((ev: WailsEventPayload) => cb(ev.data as Transcript)) as any);
+}
+
+export function onTranscriptSegment(cb: (segment: Segment) => void): () => void {
+  return Events.On("transcript:segment", ((ev: WailsEventPayload) => cb(ev.data as Segment)) as any);
 }
 
 export function onCutListReady(cb: (cutList: CutList) => void): () => void {

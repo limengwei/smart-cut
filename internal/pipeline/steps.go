@@ -2,9 +2,12 @@ package pipeline
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"path/filepath"
 
 	"smart-cut/internal/adapter"
+	"smart-cut/internal/eventbus"
 	"smart-cut/internal/model"
 )
 
@@ -13,10 +16,11 @@ import (
 type TranscribeStep struct {
 	whisper adapter.WhisperAdapter
 	ffmpeg  adapter.FFmpegAdapter
+	bus     *eventbus.EventBus
 	opts    adapter.WhisperOptions
 }
-
-func NewTranscribeStep(whisper adapter.WhisperAdapter, ffmpeg adapter.FFmpegAdapter, opts adapter.WhisperOptions) *TranscribeStep {
+func NewTranscribeStep(whisper adapter.WhisperAdapter, ffmpeg adapter.FFmpegAdapter, opts adapter.WhisperOptions, bus *eventbus.EventBus) *TranscribeStep {
+	return &TranscribeStep{whisper: whisper, ffmpeg: ffmpeg, opts: opts, bus: bus}
 	return &TranscribeStep{whisper: whisper, ffmpeg: ffmpeg, opts: opts}
 }
 
@@ -27,14 +31,36 @@ func (s *TranscribeStep) Run(ctx *Context, reporter ProgressReporter) error {
 
 	mediaPath := ctx.Project.Media.Path
 
-	reporter.Report("transcribe", "running whisper", 0.3)
+	// whisper.cpp 要求 16kHz 单声道 wav，先用 ffmpeg 预处理
+	tmpDir, err := os.MkdirTemp("", "whisper-audio-")
+	if err != nil {
+		return fmt.Errorf("transcribe: create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
 
-	transcript, err := s.whisper.Transcribe(ctx.Cancel, mediaPath, s.opts)
+	wavPath := filepath.Join(tmpDir, "audio16k.wav")
+	if err := s.ffmpeg.ExtractAudio16kWav(ctx.Cancel, mediaPath, wavPath); err != nil {
+		return fmt.Errorf("transcribe: extract audio: %w", err)
+	}
+
+	reporter.Report("transcribe", "running whisper", 0.3)
+	// 流式回调：实时进度 + 逐句字幕推送
+	onProgress := func(p float64) {
+		// whisper 进度映射到 0.3-0.95 区间（留 0.05 给收尾）
+		reporter.Report("transcribe", fmt.Sprintf("whisper %d%%", int(p*100)), 0.3+p*0.65)
+	}
+	onSegment := func(seg model.Segment) {
+		log.Printf("[Transcribe] 流式句段 #%d %dms-%dms: %s", seg.ID, seg.StartMs, seg.EndMs, seg.Text)
+		if s.bus != nil {
+			s.bus.Emit("transcript:segment", seg)
+		}
+	}
+
+	transcript, err := s.whisper.TranscribeStream(ctx.Cancel, wavPath, s.opts, onProgress, onSegment)
 	if err != nil {
 		return fmt.Errorf("transcribe: %w", err)
 	}
 
-	ctx.Transcript = transcript
 
 	reporter.Report("transcribe", "completed", 1.0)
 	reporter.Done("transcribe", transcript)
@@ -64,10 +90,12 @@ func (s *AnalyzeStep) Run(ctx *Context, reporter ProgressReporter) error {
 	if ctx.Transcript == nil {
 		return fmt.Errorf("analyze: transcript is nil")
 	}
+	log.Printf("[Step] analyze start: projectID=%s segments=%d silenceMs=%d", ctx.Project.ID, len(ctx.Transcript.Segments), s.rules.thresholdMs)
 
 	reporter.Report("analyze", "detecting silence", 0.2)
 
 	ruleCuts := s.rules.Detect(ctx.Transcript)
+	log.Printf("[Step] analyze rule-based silence cuts: %d", len(ruleCuts))
 
 	reporter.Report("analyze", "calling LLM", 0.4)
 
@@ -83,10 +111,34 @@ func (s *AnalyzeStep) Run(ctx *Context, reporter ProgressReporter) error {
 		})
 	}
 
-	llmResult, err := s.llm.Analyze(ctx.Cancel, llmReq, s.llmCfg)
+	// 流式调用：用 token 计数估算进度（区间 0.4→0.8）
+	// 估算预期 token：按输入文本总长度的 1.5 倍粗估（含 JSON 结构开销）
+	estimatedTokens := 0
+	for _, seg := range llmReq.Segments {
+		estimatedTokens += len(seg.Text)
+	}
+	if estimatedTokens < 1 {
+		estimatedTokens = 1
+	}
+	estimatedTokens = int(float64(estimatedTokens) * 1.5)
+	receivedTokens := 0
+	onToken := func(delta string) {
+		receivedTokens += len(delta)
+		ratio := float64(receivedTokens) / float64(estimatedTokens)
+		if ratio > 1 {
+			ratio = 1
+		}
+		reporter.Report("analyze", fmt.Sprintf("LLM 流式接收 %d/%d", receivedTokens, estimatedTokens), 0.4+ratio*0.4)
+	}
+
+	llmResult, err := s.llm.AnalyzeStream(ctx.Cancel, llmReq, s.llmCfg, onToken)
 	if err != nil {
 		reporter.Report("analyze", fmt.Sprintf("LLM failed, using rules only: %v", err), 0.6)
+		log.Printf("[Step] analyze LLM failed (fallback to rules only): %v", err)
 		llmResult = &model.LLMAnalysisResult{}
+	}
+	if llmResult != nil {
+		log.Printf("[Step] analyze LLM result: removeSegmentIds=%d items=%d", len(llmResult.RemoveSegmentIDs), len(llmResult.Items))
 	}
 
 	reporter.Report("analyze", "merging results", 0.8)

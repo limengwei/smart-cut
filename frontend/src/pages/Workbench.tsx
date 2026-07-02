@@ -22,6 +22,7 @@ import {
 import {
   onProgress,
   onTranscriptReady,
+  onTranscriptSegment,
   onCutListReady,
 } from "../api/events";
 import type { CutSegment, ExportOptions } from "../api/types";
@@ -89,6 +90,12 @@ export function Workbench() {
   useEffect(() => {
     const off1 = onProgress((ev) => {
       wb.setProgress(ev.progress, ev.step);
+      // 任务完成 → 切回 ready；任务运行中 → 对应进行态
+      if (ev.status === "done") {
+        wb.setStage("ready");
+        wb.setProgress(1, "完成");
+        return;
+      }
       if (ev.stage === "transcribe" && ev.status === "running") wb.setStage("transcribing");
       if (ev.stage === "analyze" && ev.status === "running") wb.setStage("analyzing");
       if (ev.stage === "export" && ev.status === "running") wb.setStage("exporting");
@@ -96,7 +103,13 @@ export function Workbench() {
     });
     const off2 = onTranscriptReady((t) => {
       wb.setTranscript(t);
+      // 转录完成 → 切回 ready（兜底，progress done 可能已触发，这里确保复位）
+      wb.setStage("ready");
       if (id) getWaveformPeaks(id).then(wb.setPeaks).catch(() => {});
+    });
+    // 流式字幕：每收到一句就增量追加到字幕轨
+    const off2b = onTranscriptSegment((seg) => {
+      wb.appendSegment(seg);
     });
     const off3 = onCutListReady((c) => {
       wb.setCutList(c);
@@ -105,6 +118,7 @@ export function Workbench() {
     return () => {
       off1();
       off2();
+      off2b();
       off3();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,6 +134,7 @@ export function Workbench() {
     if (!id) return;
     wb.setStage("transcribing");
     wb.setProgress(0, "启动转录");
+    wb.setTranscript(null); // 清空旧字幕，准备流式接收
     try {
       await startTranscribe(id);
     } catch (e) {

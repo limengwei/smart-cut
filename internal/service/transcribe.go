@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"sync"
 
@@ -45,9 +46,10 @@ func (s *TranscribeService) StartTranscribe(project *model.Project, modelPath st
 			Language:  "zh",
 			ModelPath: modelPath,
 			WordLevel: false,
-		})
+		}, s.bus)
 
 		if err := step.Run(ctx, reporter); err != nil {
+			log.Printf("[Transcribe] 任务失败 projectID=%s err=%v", project.ID, err)
 			s.bus.EmitProgress(model.ProgressEvent{
 				TaskID: taskID,
 				Stage:  "transcribe",
@@ -58,6 +60,7 @@ func (s *TranscribeService) StartTranscribe(project *model.Project, modelPath st
 		}
 
 		s.transcripts.Store(project.ID, ctx.Transcript)
+		log.Printf("[Transcribe] 任务完成 projectID=%s segments=%d", project.ID, len(ctx.Transcript.Segments))
 
 		s.bus.Emit("transcript:ready", ctx.Transcript)
 	}()
