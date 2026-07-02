@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A smart-cut application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/smart-cut.exe %u
+Terminal=false
+Type=Application
+Icon=smart-cut.exe
+Categories=Utility;
+StartupWMClass=smart-cut.exe
+
+ 
