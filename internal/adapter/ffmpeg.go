@@ -325,6 +325,61 @@ func (a *ffmpegAdapter) MuxSubtitle(ctx context.Context, videoPath, subtitleClip
 	return nil
 }
 
+// HDRTransfers 触发 tone mapping 的传输函数集合（PQ/HDR10 与 HLG）
+var HDRTransfers = map[string]bool{
+	"smpte2084":    true, // PQ (HDR10)
+	"arib-std-b67": true, // HLG
+}
+
+// TonemapChain HDR → SDR 的 zscale+tonemap filter 链
+// 顺序：线性化 → 浮点 → bt709 色域 → hable tonemap → bt709 传输 → yuv420p
+const TonemapChain = "zscale=t=linear:npl=100," +
+	"format=gbrpf32le," +
+	"zscale=p=bt709," +
+	"tonemap=tonemap=hable:desat=0," +
+	"zscale=t=bt709:m=bt709:r=tv," +
+	"format=yuv420p"
+
+// IsHDR 判断媒体是否为 HDR 源（PQ 或 HLG 传输函数）
+func IsHDR(transfer string) bool {
+	return HDRTransfers[transfer]
+}
+
+// BuildVFChain 构造视频 filter 链（纯函数，可测试）
+// 顺序：HDR tone map（仅 HDR 源）→ 缩放（竖屏感知）
+// portrait=true 时按高度缩放，否则按宽度
+func BuildVFChain(colorTransfer string, portrait bool, targetWidth, targetHeight int, extraFilters []string) string {
+	var parts []string
+	if IsHDR(colorTransfer) {
+		parts = append(parts, TonemapChain)
+	}
+	// 竖屏感知缩放：保持目标短边，长边 -2 自动对齐
+	var scale string
+	if portrait {
+		scale = fmt.Sprintf("scale=-2:%d", targetHeight)
+	} else {
+		scale = fmt.Sprintf("scale=%d:-2", targetWidth)
+	}
+	parts = append(parts, scale)
+	parts = append(parts, extraFilters...)
+	return strings.Join(parts, ",")
+}
+
+// IsPortrait 判断是否竖屏（height > width）
+func IsPortrait(width, height int) bool {
+	return height > width
+}
+
+// BuildAudioFadeChain 构造 30ms 音频淡入淡出 filter 链（防爆音）
+// durationSec 为本段时长（秒）
+func BuildAudioFadeChain(durationSec float64) string {
+	fadeOutStart := durationSec - 0.03
+	if fadeOutStart < 0 {
+		fadeOutStart = 0
+	}
+	return fmt.Sprintf("afade=t=in:st=0:d=0.03,afade=t=out:st=%.3f:d=0.03", fadeOutStart)
+}
+
 // ffmpegProgressRegex 匹配 ffmpeg stderr 的 time= 行
 var ffmpegProgressRegex = regexp.MustCompile(`time=(\d+):(\d+):(\d+).(\d+)`)
 
