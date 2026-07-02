@@ -275,6 +275,8 @@ func (a *ffmpegAdapter) ConcatDemuxer(ctx context.Context, segmentPaths []string
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg concat demuxer: %w (stderr: %s)", err, stderr.String())
 	}
+	// 成功后清理 list 文件（失败时保留以便排障）
+	_ = os.Remove(listPath)
 	return nil
 }
 
