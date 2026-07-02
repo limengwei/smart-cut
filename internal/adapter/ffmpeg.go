@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,7 +23,17 @@ type FFmpegAdapter interface {
 	ExtractWaveform(ctx context.Context, mediaPath, outPng string) error
 	ExtractAudio16kWav(ctx context.Context, mediaPath, outWav string) error
 	ExtractWaveformPeaks(ctx context.Context, mediaPath string, durationMs int64, buckets int) (*model.WaveformPeaks, error)
-	ConcatLossless(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string) error
+
+	// ExtractSegment 逐段提取（内嵌音频淡入淡出 + HDR tone map + 竖屏感知缩放）
+	// sourcePath: 源视频；segStartSec/segEndSec: 段起止秒；
+	// media: 源媒体元信息（用于 HDR/竖屏判断）；outPath: 输出 mp4
+	ExtractSegment(ctx context.Context, sourcePath string, segStartSec, segEndSec float64, media model.MediaFile, outPath string) error
+
+	// ConcatDemuxer 用 concat demuxer + -c copy 真无损拼接
+	// segmentPaths: 已提取的段 mp4 列表；outPath: 输出
+	ConcatDemuxer(ctx context.Context, segmentPaths []string, outPath string) error
+
+	// ConcatReencode 重编码拼接（保留旧接口，逐段提取 + 重编码 concat，用于需要统一编码参数的场景）
 	ConcatReencode(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string, opts model.EncodeOpts) error
 	MuxSubtitle(ctx context.Context, videoPath, subtitleClipPath, outPath string) error
 }
@@ -183,51 +195,85 @@ func (a *ffmpegAdapter) ExtractAudio16kWav(ctx context.Context, mediaPath, outWa
 	return nil
 }
 
-func (a *ffmpegAdapter) ConcatLossless(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string) error {
+// ExtractSegment 逐段提取：-ss before -i 快速精确 seek + 内嵌 vf/af
+func (a *ffmpegAdapter) ExtractSegment(ctx context.Context, sourcePath string, segStartSec, segEndSec float64, media model.MediaFile, outPath string) error {
 	binaryPath, err := a.resolver.Resolve("ffmpeg")
 	if err != nil {
-		return fmt.Errorf("ffmpeg concat lossless: %w", err)
+		return fmt.Errorf("ffmpeg extract segment: %w", err)
 	}
 
-	if len(segments) == 0 {
-		return fmt.Errorf("ffmpeg concat: no segments to concat")
+	duration := segEndSec - segStartSec
+	if duration <= 0 {
+		return fmt.Errorf("ffmpeg extract segment: invalid duration %.3f", duration)
 	}
 
-	// 构建 filter_complex
-	var filters []string
-	for i, seg := range segments {
-		startSec := float64(seg.StartMs) / 1000.0
-		endSec := float64(seg.EndMs) / 1000.0
-		filters = append(filters, fmt.Sprintf("[0:v]trim=start=%f:end=%f,setpts=PTS-STARTPTS[v%d];[0:a]atrim=start=%f:end=%f,asetpts=PTS-STARTPTS[a%d]",
-			startSec, endSec, i, startSec, endSec, i))
+	portrait := IsPortrait(media.Width, media.Height)
+	vf := BuildVFChain(media.ColorTransfer, portrait, 1920, 1080, nil)
+	// 构造 args：-af 仅在有音频时加入（无音频段加 -af 会报错）；outPath 必须在最后
+	args := []string{
+		"-y",
+		"-ss", fmt.Sprintf("%.3f", segStartSec),
+		"-i", sourcePath,
+		"-t", fmt.Sprintf("%.3f", duration),
+		"-vf", vf,
+		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+		"-movflags", "+faststart",
+	}
+	if media.HasAudio {
+		args = append(args, "-af", BuildAudioFadeChain(duration))
+	}
+	args = append(args, outPath)
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg extract segment: %w (stderr: %s)", err, stderr.String())
+	}
+	return nil
+}
+
+// ConcatDemuxer 用 concat demuxer + -c copy 真无损拼接（要求各段编码参数一致）
+func (a *ffmpegAdapter) ConcatDemuxer(ctx context.Context, segmentPaths []string, outPath string) error {
+	binaryPath, err := a.resolver.Resolve("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg concat demuxer: %w", err)
+	}
+	if len(segmentPaths) == 0 {
+		return fmt.Errorf("ffmpeg concat demuxer: no segments")
 	}
 
-	// 连接所有段
-	var concatV []string
-	var concatA []string
-	for i := range segments {
-		concatV = append(concatV, fmt.Sprintf("[v%d]", i))
-		concatA = append(concatA, fmt.Sprintf("[a%d]", i))
+	// 写 concat 列表文件到 outPath 同目录
+	listPath := outPath + ".concat.txt"
+	var listContent strings.Builder
+	for _, p := range segmentPaths {
+		// 用绝对路径，避免工作目录问题
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			abs = p
+		}
+		listContent.WriteString(fmt.Sprintf("file '%s'\n", abs))
 	}
-	concatFilter := strings.Join(concatV, "") + fmt.Sprintf("concat=n=%d:v=1:a=0[vout]", len(segments)) +
-		";" + strings.Join(concatA, "") + fmt.Sprintf("concat=n=%d:v=0:a=1[aout]", len(segments))
-
-	filterComplex := strings.Join(filters, ";") + ";" + concatFilter
+	if err := os.WriteFile(listPath, []byte(listContent.String()), 0644); err != nil {
+		return fmt.Errorf("ffmpeg concat demuxer: write list: %w", err)
+	}
 
 	args := []string{
-		"-i", sourcePath,
-		"-filter_complex", filterComplex,
-		"-map", "[vout]",
-		"-map", "[aout]",
-		"-c:v", "copy",
-		"-c:a", "copy",
 		"-y",
+		"-f", "concat", "-safe", "0",
+		"-i", listPath,
+		"-c", "copy",
+		"-movflags", "+faststart",
 		outPath,
 	}
 
+	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg concat lossless: %w", err)
+		return fmt.Errorf("ffmpeg concat demuxer: %w (stderr: %s)", err, stderr.String())
 	}
 	return nil
 }
