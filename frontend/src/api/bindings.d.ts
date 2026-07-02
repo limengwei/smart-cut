@@ -7,6 +7,7 @@ declare module "../../bindings/smart-cut/app/app.js" {
     ExportOptions,
     GlobalSettings,
     MediaFile,
+    WaveformPeaks,
   } from "./types";
 
   export function CreateProject(name: string, mediaPath: string): Promise<Project>;
@@ -30,4 +31,7 @@ declare module "../../bindings/smart-cut/app/app.js" {
   export function GetSettings(): Promise<GlobalSettings>;
   export function SaveSettings(s: GlobalSettings): Promise<void>;
   export function ProbeBinary(name: string): Promise<{ path: string; version: string }>;
+
+  export function GetWaveformPeaks(projectID: string): Promise<WaveformPeaks>;
+  export function GetMediaURL(projectID: string): Promise<string>;
 }

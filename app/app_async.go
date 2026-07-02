@@ -82,6 +82,32 @@ func (a *App) GetWaveform(projectID string) (string, error) {
 	return waveformPath, nil
 }
 
+// GetWaveformPeaks 获取波形峰值采样数据（供前端 canvas 渲染）
+func (a *App) GetWaveformPeaks(projectID string) (*model.WaveformPeaks, error) {
+	project, err := a.GetProject(projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	peaks, err := a.transcribeService.GetWaveformPeaks(ctx, project)
+	if err != nil {
+		return nil, NewAppError(ErrCodeInternal, "提取波形数据失败", err.Error())
+	}
+	return peaks, nil
+}
+
+// GetMediaURL 获取项目媒体文件的 webview 可访问 URL
+func (a *App) GetMediaURL(projectID string) (string, error) {
+	if _, err := a.GetProject(projectID); err != nil {
+		return "", err
+	}
+	if a.mediaServer == nil {
+		return "", NewAppError(ErrCodeInternal, "媒体服务未启动", "")
+	}
+	return a.mediaServer.URL(projectID), nil
+}
+
 func (a *App) ProbeMedia(path string) (*model.MediaFile, error) {
 	ctx := context.Background()
 	mf, err := a.transcribeService.ProbeMedia(ctx, path)

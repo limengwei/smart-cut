@@ -1,9 +1,12 @@
 package adapter
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -16,6 +19,7 @@ import (
 type FFmpegAdapter interface {
 	Probe(ctx context.Context, path string) (*model.MediaFile, error)
 	ExtractWaveform(ctx context.Context, mediaPath, outPng string) error
+	ExtractWaveformPeaks(ctx context.Context, mediaPath string, durationMs int64, buckets int) (*model.WaveformPeaks, error)
 	ConcatLossless(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string) error
 	ConcatReencode(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string, opts model.EncodeOpts) error
 	MuxSubtitle(ctx context.Context, videoPath, subtitleClipPath, outPath string) error
@@ -311,4 +315,118 @@ func ParseFFmpegProgress(line string) int64 {
 		cs *= 10
 	}
 	return int64(hours*3600000 + minutes*60000 + seconds*1000 + cs)
+}
+
+// ExtractWaveformPeaks 提取波形峰值采样数据
+func (a *ffmpegAdapter) ExtractWaveformPeaks(ctx context.Context, mediaPath string, durationMs int64, buckets int) (*model.WaveformPeaks, error) {
+	binaryPath, err := a.resolver.Resolve("ffmpeg")
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg waveform peaks: %w", err)
+	}
+
+	if buckets <= 0 {
+		buckets = 2000
+	}
+
+	const sampleRate = 8000
+	totalSamples := int(int64(sampleRate) * durationMs / 1000)
+	if totalSamples <= 0 {
+		return nil, fmt.Errorf("invalid duration %dms for waveform", durationMs)
+	}
+	samplesPerBucket := totalSamples / buckets
+	if samplesPerBucket < 1 {
+		samplesPerBucket = 1
+	}
+
+	cmd := exec.CommandContext(ctx, binaryPath,
+		"-i", mediaPath,
+		"-f", "s16le",
+		"-acodec", "pcm_s16le",
+		"-ac", "1",
+		"-ar", fmt.Sprintf("%d", sampleRate),
+		"-",
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg waveform pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("ffmpeg waveform start: %w", err)
+	}
+
+	mins, maxs := computePeaksFromReader(stdout, samplesPerBucket, buckets)
+
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("ffmpeg waveform wait: %w (%s)", err, stderr.String())
+	}
+
+	return &model.WaveformPeaks{
+		DurationMs: durationMs,
+		SampleRate: sampleRate,
+		Buckets:    len(mins),
+		Mins:       mins,
+		Maxs:       maxs,
+	}, nil
+}
+
+// computePeaksFromReader 从 PCM int16 流计算每桶 min/max 峰值
+func computePeaksFromReader(r io.Reader, samplesPerBucket, buckets int) (mins, maxs []int16) {
+	mins = make([]int16, 0, buckets)
+	maxs = make([]int16, 0, buckets)
+	buf := make([]byte, samplesPerBucket*2)
+
+	for i := 0; i < buckets; i++ {
+		n, err := io.ReadFull(r, buf)
+		if n == 0 {
+			break
+		}
+		readSamples := n / 2
+		var minV, maxV int16
+		for j := 0; j < readSamples; j++ {
+			v := int16(binary.LittleEndian.Uint16(buf[j*2 : j*2+2]))
+			if j == 0 || v < minV {
+				minV = v
+			}
+			if j == 0 || v > maxV {
+				maxV = v
+			}
+		}
+		mins = append(mins, minV)
+		maxs = append(maxs, maxV)
+		if err != nil {
+			break
+		}
+	}
+	return mins, maxs
+}
+
+// computePeaks 纯函数版本（用于测试，不依赖 IO）
+func computePeaks(samples []int16, samplesPerBucket int) (mins, maxs []int16) {
+	if samplesPerBucket < 1 {
+		samplesPerBucket = 1
+	}
+	buckets := (len(samples) + samplesPerBucket - 1) / samplesPerBucket
+	mins = make([]int16, 0, buckets)
+	maxs = make([]int16, 0, buckets)
+	for i := 0; i < len(samples); i += samplesPerBucket {
+		end := i + samplesPerBucket
+		if end > len(samples) {
+			end = len(samples)
+		}
+		var minV, maxV int16
+		for j, v := range samples[i:end] {
+			if j == 0 || v < minV {
+				minV = v
+			}
+			if j == 0 || v > maxV {
+				maxV = v
+			}
+		}
+		mins = append(mins, minV)
+		maxs = append(maxs, maxV)
+	}
+	return mins, maxs
 }

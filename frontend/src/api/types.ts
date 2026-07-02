@@ -129,3 +129,11 @@ export interface AppError {
   message: string;
   detail: string;
 }
+
+export interface WaveformPeaks {
+  durationMs: number;
+  sampleRate: number;
+  buckets: number;
+  mins: number[];
+  maxs: number[];
+}

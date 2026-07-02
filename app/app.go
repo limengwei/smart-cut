@@ -18,6 +18,7 @@ type App struct {
 	exportService     *service.ExportService
 	configManager     *config.ConfigManager
 	binaryResolver    *adapter.BinaryResolver
+	mediaServer       *mediaServer
 
 	mu       sync.RWMutex
 	projects map[string]*model.Project
@@ -31,6 +32,7 @@ func NewApp(
 	exportService *service.ExportService,
 	configManager *config.ConfigManager,
 	binaryResolver *adapter.BinaryResolver,
+	mediaServer *mediaServer,
 ) *App {
 	return &App{
 		projectService:    projectService,
@@ -40,6 +42,7 @@ func NewApp(
 		exportService:     exportService,
 		configManager:     configManager,
 		binaryResolver:    binaryResolver,
+		mediaServer:       mediaServer,
 		projects:          make(map[string]*model.Project),
 	}
 }
@@ -52,6 +55,9 @@ func (a *App) CreateProject(name, mediaPath string) (*model.Project, error) {
 
 	a.mu.Lock()
 	a.projects[project.ID] = project
+	if a.mediaServer != nil {
+		a.mediaServer.Register(project.ID, project.Media.Path)
+	}
 	a.mu.Unlock()
 
 	return project, nil
@@ -65,6 +71,9 @@ func (a *App) OpenProject(projectPath string) (*model.Project, error) {
 
 	a.mu.Lock()
 	a.projects[project.ID] = project
+	if a.mediaServer != nil {
+		a.mediaServer.Register(project.ID, project.Media.Path)
+	}
 	a.mu.Unlock()
 
 	return project, nil

@@ -34,6 +34,14 @@ func main() {
 	analyzeService := service.NewAnalyzeService(llmAdapter, bus, editService)
 	exportService := service.NewExportService(ffmpegAdapter, bus)
 
+	// 6. 媒体服务（本地 HTTP，供 webview 访问媒体文件）
+	mediaServer, err := app.NewMediaServer()
+	if err != nil {
+		log.Fatalf("启动媒体服务失败: %v", err)
+	}
+	defer mediaServer.Shutdown()
+
+	// 7. API Layer (App)
 	appInstance := app.NewApp(
 		projectService,
 		transcribeService,
@@ -42,6 +50,7 @@ func main() {
 		exportService,
 		configManager,
 		resolver,
+		mediaServer,
 	)
 
 	wailsApp := application.New(application.Options{
@@ -72,7 +81,7 @@ func main() {
 		URL:              "/",
 	})
 
-	err := wailsApp.Run()
+	err = wailsApp.Run()
 	if err != nil {
 		log.Fatal(err)
 	}

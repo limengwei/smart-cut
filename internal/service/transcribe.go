@@ -18,7 +18,8 @@ type TranscribeService struct {
 	ffmpeg      adapter.FFmpegAdapter
 	bus         *eventbus.EventBus
 	editSvc     *EditService
-	transcripts sync.Map
+	transcripts sync.Map // projectID → *model.Transcript
+	peaks       sync.Map // projectID → *model.WaveformPeaks
 }
 
 // NewTranscribeService 创建 TranscribeService
@@ -86,4 +87,19 @@ func (s *TranscribeService) ProbeMedia(ctx context.Context, path string) (*model
 func (s *TranscribeService) ExtractWaveform(ctx context.Context, project *model.Project) error {
 	waveformPath := filepath.Join(project.WorkDir, "waveform.png")
 	return s.ffmpeg.ExtractWaveform(ctx, project.Media.Path, waveformPath)
+}
+
+// GetWaveformPeaks 获取项目的波形峰值（不存在则提取）
+func (s *TranscribeService) GetWaveformPeaks(ctx context.Context, project *model.Project) (*model.WaveformPeaks, error) {
+	if cached, ok := s.peaks.Load(project.ID); ok {
+		return cached.(*model.WaveformPeaks), nil
+	}
+
+	peaks, err := s.ffmpeg.ExtractWaveformPeaks(ctx, project.Media.Path, project.Media.DurationMs, 2000)
+	if err != nil {
+		return nil, err
+	}
+
+	s.peaks.Store(project.ID, peaks)
+	return peaks, nil
 }
