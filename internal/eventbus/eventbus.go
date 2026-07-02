@@ -7,7 +7,7 @@ import (
 )
 
 // EventBus 封装事件推送能力
-// 在 Wails 环境下，EmitFunc 调用 app.Events.Emit
+// 在 Wails 环境下，EmitFunc 调用 app.Event.Emit
 // 在测试环境下，可注入 mock
 type EventBus struct {
 	mu       sync.RWMutex
@@ -15,7 +15,7 @@ type EventBus struct {
 }
 
 // NewEventBus 创建 EventBus
-// emitFunc: 实际推送函数（Wails 里是 app.Events.Emit 的包装）
+// emitFunc: 实际推送函数（Wails 里是 app.Event.Emit 的包装）
 func NewEventBus(emitFunc func(string, interface{})) *EventBus {
 	return &EventBus{emitFunc: emitFunc}
 }

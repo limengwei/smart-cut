@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"smart-cut/internal/adapter"
 	"smart-cut/internal/eventbus"
@@ -13,10 +14,11 @@ import (
 
 // TranscribeService 编排转录流程
 type TranscribeService struct {
-	whisper adapter.WhisperAdapter
-	ffmpeg  adapter.FFmpegAdapter
-	bus     *eventbus.EventBus
-	editSvc *EditService
+	whisper     adapter.WhisperAdapter
+	ffmpeg      adapter.FFmpegAdapter
+	bus         *eventbus.EventBus
+	editSvc     *EditService
+	transcripts sync.Map
 }
 
 // NewTranscribeService 创建 TranscribeService
@@ -52,10 +54,21 @@ func (s *TranscribeService) StartTranscribe(project *model.Project, modelPath st
 			return
 		}
 
+		s.transcripts.Store(project.ID, ctx.Transcript)
+
 		s.bus.Emit("transcript:ready", ctx.Transcript)
 	}()
 
 	return taskID
+}
+
+// GetTranscript 获取项目的转录结果
+func (s *TranscribeService) GetTranscript(projectID string) (*model.Transcript, error) {
+	val, ok := s.transcripts.Load(projectID)
+	if !ok {
+		return nil, fmt.Errorf("transcript not found for project %s", projectID)
+	}
+	return val.(*model.Transcript), nil
 }
 
 // ProbeMedia 探测媒体文件信息（同步）
