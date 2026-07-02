@@ -182,6 +182,31 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 	sourcePath := ctx.Project.Media.Path
 	media := ctx.Project.Media
 
+	outPath := s.exportOpts.OutputPath
+	if outPath == "" {
+		outPath = filepath.Join(ctx.Project.WorkDir, "export.mp4")
+	}
+
+	// 按导出模式分支：
+	// - lossless（默认）：逐段提取（内嵌音频淡入淡出 + HDR tone map + 竖屏缩放）+ concat demuxer 真无损拼接
+	// - reencode：单 filter_complex 重编码拼接（保留兼容旧路径）
+	if s.exportOpts.Mode == model.ExportReencode {
+		reporter.Report("export", "concatenating (reencode)", 0.3)
+		if err := s.ffmpeg.ConcatReencode(ctx.Cancel, keepSegments, sourcePath, outPath, model.EncodeOpts{
+			VideoCodec: "libx264",
+			AudioCodec: "aac",
+			Crf:        23,
+			Preset:     "medium",
+		}); err != nil {
+			return fmt.Errorf("export: reencode concat: %w", err)
+		}
+		ctx.ExportPath = outPath
+		reporter.Report("export", "completed", 1.0)
+		reporter.Done("export", outPath)
+		return nil
+	}
+
+	// lossless 路径：逐段提取 + concat demuxer
 	tmpDir := filepath.Join(ctx.Project.WorkDir, "cuts")
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return fmt.Errorf("export: create cuts dir: %w", err)
@@ -193,22 +218,17 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 	for i, seg := range keepSegments {
 		startSec := float64(seg.StartMs) / 1000.0
 		endSec := float64(seg.EndMs) / 1000.0
-		outPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%03d.mp4", i+1))
+		segOutPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%03d.mp4", i+1))
 
-		if err := s.ffmpeg.ExtractSegment(ctx.Cancel, sourcePath, startSec, endSec, media, outPath); err != nil {
+		if err := s.ffmpeg.ExtractSegment(ctx.Cancel, sourcePath, startSec, endSec, media, segOutPath); err != nil {
 			return fmt.Errorf("export: extract segment %d: %w", i+1, err)
 		}
-		segPaths = append(segPaths, outPath)
+		segPaths = append(segPaths, segOutPath)
 
 		reporter.Report("export", fmt.Sprintf("extracted %d/%d", i+1, len(keepSegments)), 0.2+0.5*float64(i+1)/float64(len(keepSegments)))
 	}
 
 	reporter.Report("export", "concatenating", 0.7)
-
-	outPath := s.exportOpts.OutputPath
-	if outPath == "" {
-		outPath = filepath.Join(ctx.Project.WorkDir, "export.mp4")
-	}
 
 	if err := s.ffmpeg.ConcatDemuxer(ctx.Cancel, segPaths, outPath); err != nil {
 		return fmt.Errorf("export: concat: %w", err)
