@@ -1,11 +1,29 @@
+import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AppLayout } from "./layouts/AppLayout";
+import { NewProject } from "./pages/NewProject";
+import { Settings } from "./pages/Settings";
+import { Workbench } from "./pages/Workbench";
+import { useSettingsStore } from "./stores/settings";
+
 function App() {
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold">Smart-Cut</h1>
-        <p className="mt-2 text-muted-foreground">AI 口播视频自动剪辑工具</p>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Navigate to="/project/new" replace />} />
+          <Route path="/project/new" element={<NewProject />} />
+          <Route path="/project/:id" element={<Workbench />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
 
