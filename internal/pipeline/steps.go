@@ -21,7 +21,6 @@ type TranscribeStep struct {
 }
 func NewTranscribeStep(whisper adapter.WhisperAdapter, ffmpeg adapter.FFmpegAdapter, opts adapter.WhisperOptions, bus *eventbus.EventBus) *TranscribeStep {
 	return &TranscribeStep{whisper: whisper, ffmpeg: ffmpeg, opts: opts, bus: bus}
-	return &TranscribeStep{whisper: whisper, ffmpeg: ffmpeg, opts: opts}
 }
 
 func (s *TranscribeStep) Name() string { return "transcribe" }
@@ -180,27 +179,39 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 		return fmt.Errorf("export: no keep segments")
 	}
 
-	reporter.Report("export", "concatenating video", 0.3)
-
 	sourcePath := ctx.Project.Media.Path
+	media := ctx.Project.Media
+
+	tmpDir := filepath.Join(ctx.Project.WorkDir, "cuts")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return fmt.Errorf("export: create cuts dir: %w", err)
+	}
+
+	reporter.Report("export", fmt.Sprintf("extracting %d segments", len(keepSegments)), 0.2)
+
+	var segPaths []string
+	for i, seg := range keepSegments {
+		startSec := float64(seg.StartMs) / 1000.0
+		endSec := float64(seg.EndMs) / 1000.0
+		outPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%03d.mp4", i+1))
+
+		if err := s.ffmpeg.ExtractSegment(ctx.Cancel, sourcePath, startSec, endSec, media, outPath); err != nil {
+			return fmt.Errorf("export: extract segment %d: %w", i+1, err)
+		}
+		segPaths = append(segPaths, outPath)
+
+		reporter.Report("export", fmt.Sprintf("extracted %d/%d", i+1, len(keepSegments)), 0.2+0.5*float64(i+1)/float64(len(keepSegments)))
+	}
+
+	reporter.Report("export", "concatenating", 0.7)
+
 	outPath := s.exportOpts.OutputPath
 	if outPath == "" {
 		outPath = filepath.Join(ctx.Project.WorkDir, "export.mp4")
 	}
 
-	var err error
-	if s.exportOpts.Mode == model.ExportLossless {
-		err = s.ffmpeg.ConcatLossless(ctx.Cancel, keepSegments, sourcePath, outPath)
-	} else {
-		err = s.ffmpeg.ConcatReencode(ctx.Cancel, keepSegments, sourcePath, outPath, model.EncodeOpts{
-			VideoCodec: "libx264",
-			AudioCodec: "aac",
-			Crf:        23,
-			Preset:     "medium",
-		})
-	}
-	if err != nil {
-		return fmt.Errorf("export: %w", err)
+	if err := s.ffmpeg.ConcatDemuxer(ctx.Cancel, segPaths, outPath); err != nil {
+		return fmt.Errorf("export: concat: %w", err)
 	}
 
 	ctx.ExportPath = outPath
