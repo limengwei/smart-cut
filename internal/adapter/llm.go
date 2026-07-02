@@ -3,10 +3,13 @@ package adapter
 import (
 	"bytes"
 	"context"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"strings"
 
 	"smart-cut/internal/model"
 )
@@ -14,6 +17,8 @@ import (
 // LLMAdapter 定义 LLM 分析接口
 type LLMAdapter interface {
 	Analyze(ctx context.Context, req model.LLMAnalysisRequest, cfg model.LLMConfig) (*model.LLMAnalysisResult, error)
+	// AnalyzeStream 流式分析，onToken 回调在每个增量 token 触发（用于进度估算/实时显示）
+	AnalyzeStream(ctx context.Context, req model.LLMAnalysisRequest, cfg model.LLMConfig, onToken func(delta string)) (*model.LLMAnalysisResult, error)
 }
 
 // openAIAdapter 是基于 OpenAI 兼容 API 的 LLMAdapter 实现
@@ -33,6 +38,7 @@ type chatCompletionRequest struct {
 	Model       string        `json:"model"`
 	Messages    []chatMessage `json:"messages"`
 	Temperature float64       `json:"temperature"`
+	Stream      bool          `json:"stream"`
 }
 
 type chatMessage struct {
@@ -50,9 +56,22 @@ type chatCompletionResponse struct {
 }
 
 func (a *openAIAdapter) Analyze(ctx context.Context, req model.LLMAnalysisRequest, cfg model.LLMConfig) (*model.LLMAnalysisResult, error) {
+	// 非流式入口保留兼容；内部委托给 AnalyzeStream（onToken=nil）
+	return a.AnalyzeStream(ctx, req, cfg, nil)
+}
+
+// AnalyzeStream 流式调用 OpenAI 兼容 API 进行分析
+func (a *openAIAdapter) AnalyzeStream(ctx context.Context, req model.LLMAnalysisRequest, cfg model.LLMConfig, onToken func(delta string)) (*model.LLMAnalysisResult, error) {
 	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
 		return nil, fmt.Errorf("llm analyze: BaseURL, APIKey, Model are required")
 	}
+	log.Printf("[LLM] analyze start: model=%s segments=%d baseURL=%s", cfg.Model, len(req.Segments), cfg.BaseURL)
+
+	defer func(started bool) {
+		if started {
+			log.Printf("[LLM] analyze stream closed")
+		}
+	}(onToken != nil)
 
 	// 构建 system prompt
 	systemPrompt := buildSystemPrompt(req)
@@ -65,6 +84,7 @@ func (a *openAIAdapter) Analyze(ctx context.Context, req model.LLMAnalysisReques
 			{Role: "user", Content: userPrompt},
 		},
 		Temperature: 0.3,
+		Stream:      true,
 	}
 
 	body, err := json.Marshal(chatReq)
@@ -80,6 +100,7 @@ func (a *openAIAdapter) Analyze(ctx context.Context, req model.LLMAnalysisReques
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := a.httpClient.Do(httpReq)
 	if err != nil {
@@ -89,19 +110,64 @@ func (a *openAIAdapter) Analyze(ctx context.Context, req model.LLMAnalysisReques
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("[LLM] analyze HTTP error: %d body=%s", resp.StatusCode, string(respBody))
 		return nil, fmt.Errorf("llm analyze: HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var chatResp chatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return nil, fmt.Errorf("llm analyze: decode response: %w", err)
+	// 流式 SSE 解析：逐行读取 data: {...}，拼接 delta.content
+	fullContent, err := readSSEStream(resp.Body, onToken)
+	if err != nil {
+		return nil, fmt.Errorf("llm analyze: read stream: %w", err)
 	}
 
-	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("llm analyze: no choices in response")
-	}
+	log.Printf("[LLM] analyze done: contentLen=%d content=%q", len(fullContent), fullContent)
 
-	return parseLLMResponse(chatResp.Choices[0].Message.Content)
+	return parseLLMResponse(fullContent)
+}
+
+// readSSEStream 读取 OpenAI 流式响应，拼接 delta 内容，每个增量触发 onToken（可 nil）
+func readSSEStream(r io.Reader, onToken func(delta string)) (string, error) {
+	var content strings.Builder
+	scanner := bufio.NewScanner(r)
+	// 单行可能较大（尤其 JSON token），放宽缓冲
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			// 单行解析失败不致命，继续
+			continue
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta.Content
+		if delta != "" {
+			content.WriteString(delta)
+			if onToken != nil {
+				onToken(delta)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return content.String(), err
+	}
+	return content.String(), nil
 }
 
 // buildSystemPrompt 构建 LLM 的 system prompt

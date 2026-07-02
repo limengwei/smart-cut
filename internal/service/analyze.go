@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"smart-cut/internal/adapter"
 	"smart-cut/internal/eventbus"
@@ -40,6 +41,7 @@ func (s *AnalyzeService) StartAnalyze(project *model.Project, transcript *model.
 		step := pipeline.NewAnalyzeStep(s.llm, project.Settings.LLMConfig, project.Settings.SilenceMs)
 
 		if err := step.Run(ctx, reporter); err != nil {
+			log.Printf("[Analyze] 任务失败 projectID=%s err=%v", project.ID, err)
 			s.bus.EmitProgress(model.ProgressEvent{
 				TaskID: taskID,
 				Stage:  "analyze",
@@ -50,6 +52,7 @@ func (s *AnalyzeService) StartAnalyze(project *model.Project, transcript *model.
 		}
 
 		s.editSvc.SetCutList(project.ID, ctx.CutList)
+		log.Printf("[Analyze] 任务完成 projectID=%s cutSegs=%d", project.ID, len(ctx.CutList.Segments))
 		s.bus.Emit("cutlist:ready", ctx.CutList)
 	}()
 

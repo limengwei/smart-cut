@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"smart-cut/internal/adapter"
 	"smart-cut/internal/eventbus"
@@ -39,6 +40,7 @@ func (s *ExportService) StartExport(project *model.Project, cutList *model.CutLi
 		step := pipeline.NewExportStep(s.ffmpeg, opts)
 
 		if err := step.Run(ctx, reporter); err != nil {
+			log.Printf("[Export] 任务失败 projectID=%s err=%v", project.ID, err)
 			s.bus.EmitProgress(model.ProgressEvent{
 				TaskID: taskID,
 				Stage:  "export",
@@ -48,6 +50,7 @@ func (s *ExportService) StartExport(project *model.Project, cutList *model.CutLi
 			return
 		}
 
+		log.Printf("[Export] 任务完成 projectID=%s out=%s", project.ID, ctx.ExportPath)
 		s.bus.Emit("export:done", ctx.ExportPath)
 	}()
 
