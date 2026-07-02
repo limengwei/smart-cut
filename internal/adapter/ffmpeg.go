@@ -325,8 +325,8 @@ func (a *ffmpegAdapter) MuxSubtitle(ctx context.Context, videoPath, subtitleClip
 	return nil
 }
 
-// HDRTransfers 触发 tone mapping 的传输函数集合（PQ/HDR10 与 HLG）
-var HDRTransfers = map[string]bool{
+// hdrTransfers 触发 tone mapping 的传输函数集合（PQ/HDR10 与 HLG）
+var hdrTransfers = map[string]bool{
 	"smpte2084":    true, // PQ (HDR10)
 	"arib-std-b67": true, // HLG
 }
@@ -342,12 +342,11 @@ const TonemapChain = "zscale=t=linear:npl=100," +
 
 // IsHDR 判断媒体是否为 HDR 源（PQ 或 HLG 传输函数）
 func IsHDR(transfer string) bool {
-	return HDRTransfers[transfer]
+	return hdrTransfers[transfer]
 }
 
 // BuildVFChain 构造视频 filter 链（纯函数，可测试）
 // 顺序：HDR tone map（仅 HDR 源）→ 缩放（竖屏感知）
-// portrait=true 时按高度缩放，否则按宽度
 func BuildVFChain(colorTransfer string, portrait bool, targetWidth, targetHeight int, extraFilters []string) string {
 	var parts []string
 	if IsHDR(colorTransfer) {
@@ -370,14 +369,17 @@ func IsPortrait(width, height int) bool {
 	return height > width
 }
 
+// audioFadeSec 切点音频淡入淡出时长（秒），防爆音
+const audioFadeSec = 0.03
+
 // BuildAudioFadeChain 构造 30ms 音频淡入淡出 filter 链（防爆音）
 // durationSec 为本段时长（秒）
 func BuildAudioFadeChain(durationSec float64) string {
-	fadeOutStart := durationSec - 0.03
+	fadeOutStart := durationSec - audioFadeSec
 	if fadeOutStart < 0 {
 		fadeOutStart = 0
 	}
-	return fmt.Sprintf("afade=t=in:st=0:d=0.03,afade=t=out:st=%.3f:d=0.03", fadeOutStart)
+	return fmt.Sprintf("afade=t=in:st=0:d=%.3f,afade=t=out:st=%.3f:d=%.3f", audioFadeSec, fadeOutStart, audioFadeSec)
 }
 
 // ffmpegProgressRegex 匹配 ffmpeg stderr 的 time= 行

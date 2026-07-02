@@ -62,12 +62,12 @@ func TestBuildVFChain_WithExtraFilters(t *testing.T) {
 
 func TestBuildAudioFadeChain_Normal(t *testing.T) {
 	chain := BuildAudioFadeChain(5.0)
-	assert.True(t, strings.Contains(chain, "afade=t=in:st=0:d=0.03"))
-	assert.True(t, strings.Contains(chain, "afade=t=out:st=4.970:d=0.03"))
+	assert.True(t, strings.Contains(chain, "afade=t=in:st=0:d=0.030"))
+	assert.True(t, strings.Contains(chain, "afade=t=out:st=4.970:d=0.030"))
 }
 
 func TestBuildAudioFadeChain_VeryShort(t *testing.T) {
 	// 短于 30ms 的段：fadeOutStart 钳为 0，不产生负值
 	chain := BuildAudioFadeChain(0.02)
-	assert.True(t, strings.Contains(chain, "afade=t=out:st=0.000:d=0.03"))
+	assert.True(t, strings.Contains(chain, "afade=t=out:st=0.000:d=0.030"))
 }
