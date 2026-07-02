@@ -50,10 +50,15 @@ func TestSave_And_Load_RoundTrip(t *testing.T) {
 
 	loaded, err := mgr.Load()
 	require.NoError(t, err)
-	assert.Equal(t, original.Theme, loaded.Theme)
-	assert.Equal(t, original.DefaultLLM.APIKey, loaded.DefaultLLM.APIKey)
-	assert.Equal(t, original.Binaries["ffmpeg"], loaded.Binaries["ffmpeg"])
-	assert.Equal(t, original.WhisperModelDir, loaded.WhisperModelDir)
+	assert.Equal(t, original, loaded)
+}
+
+func TestSave_Nil_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewConfigManager(dir)
+
+	err := mgr.Save(nil)
+	assert.Error(t, err)
 }
 
 func TestSave_CreatesDirectory(t *testing.T) {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -14,7 +15,10 @@ type ConfigManager struct {
 
 func NewConfigManager(configDir string) *ConfigManager {
 	if configDir == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
 		configDir = filepath.Join(home, ".smart-cut")
 	}
 	return &ConfigManager{
@@ -40,6 +44,9 @@ func (m *ConfigManager) Load() (*model.GlobalSettings, error) {
 }
 
 func (m *ConfigManager) Save(settings *model.GlobalSettings) error {
+	if settings == nil {
+		return errors.New("config: settings is nil")
+	}
 	dir := filepath.Dir(m.configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
