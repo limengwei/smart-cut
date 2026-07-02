@@ -22,6 +22,7 @@ func TestParseFFprobeJSON_ValidOutput(t *testing.T) {
 	assert.Equal(t, int64(10500), media.DurationMs)
 	assert.True(t, media.HasAudio)
 	assert.Equal(t, "mov,mp4,m4a,3gp,3g2,mj2", media.Format)
+	assert.Equal(t, "bt709", media.ColorTransfer)
 }
 
 func TestParseFFprobeJSON_NoAudio(t *testing.T) {
@@ -43,6 +44,19 @@ func TestParseFFprobeJSON_NoAudio(t *testing.T) {
 func TestParseFFprobeJSON_InvalidJSON(t *testing.T) {
 	_, err := parseFFprobeJSON([]byte(`{invalid}`))
 	assert.Error(t, err)
+}
+
+func TestParseFFprobeJSON_HDRTransfer(t *testing.T) {
+	data := []byte(`{
+		"streams": [
+			{"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1", "duration": "10.5", "color_transfer": "arib-std-b67"}
+		],
+		"format": {"duration": "10.5", "format_name": "mp4"}
+	}`)
+
+	media, err := parseFFprobeJSON(data)
+	require.NoError(t, err)
+	assert.Equal(t, "arib-std-b67", media.ColorTransfer)
 }
 
 func TestParseFrameRate_Fraction(t *testing.T) {

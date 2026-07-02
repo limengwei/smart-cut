@@ -6,7 +6,8 @@
       "width": 1920,
       "height": 1080,
       "r_frame_rate": "30/1",
-      "duration": "10.500000"
+      "duration": "10.500000",
+      "color_transfer": "bt709"
     },
     {
       "codec_type": "audio",

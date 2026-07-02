@@ -34,13 +34,14 @@ type Project struct {
 
 // MediaFile 媒体文件元信息
 type MediaFile struct {
-	Path       string  `json:"path"`
-	DurationMs int64   `json:"durationMs"`
-	Format     string  `json:"format"`
-	Width      int     `json:"width"`
-	Height     int     `json:"height"`
-	Fps        float64 `json:"fps"`
-	HasAudio   bool    `json:"hasAudio"`
+	Path          string  `json:"path"`
+	DurationMs    int64   `json:"durationMs"`
+	Format        string  `json:"format"`
+	Width         int     `json:"width"`
+	Height        int     `json:"height"`
+	Fps           float64 `json:"fps"`
+	HasAudio      bool    `json:"hasAudio"`
+	ColorTransfer string  `json:"colorTransfer"` // 颜色传输函数,如 smpte2084(PQ)/arib-std-b67(HLG),用于 HDR 检测
 }
 
 // ProjectSettings 工程级设置

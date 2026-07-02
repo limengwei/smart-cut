@@ -39,12 +39,13 @@ func NewFFmpegAdapter(resolver *BinaryResolver) FFmpegAdapter {
 // ffprobeJSONOutput 是 ffprobe -of json 的输出结构
 type ffprobeJSONOutput struct {
 	Streams []struct {
-		CodecType  string `json:"codec_type"`
-		CodecName  string `json:"codec_name"`
-		Width      int    `json:"width"`
-		Height     int    `json:"height"`
-		RFrameRate string `json:"r_frame_rate"`
-		Duration   string `json:"duration"`
+		CodecType     string `json:"codec_type"`
+		CodecName     string `json:"codec_name"`
+		Width         int    `json:"width"`
+		Height        int    `json:"height"`
+		RFrameRate    string `json:"r_frame_rate"`
+		Duration      string `json:"duration"`
+		ColorTransfer string `json:"color_transfer"`
 	} `json:"streams"`
 	Format struct {
 		Duration   string `json:"duration"`
@@ -89,6 +90,7 @@ func parseFFprobeJSON(data []byte) (*model.MediaFile, error) {
 			media.Width = stream.Width
 			media.Height = stream.Height
 			media.Fps = parseFrameRate(stream.RFrameRate)
+			media.ColorTransfer = stream.ColorTransfer
 		}
 		if stream.CodecType == "audio" {
 			media.HasAudio = true
