@@ -26,11 +26,13 @@ func (s *ExportService) StartExport(project *model.Project, cutList *model.CutLi
 	taskID := fmt.Sprintf("export-%s", project.ID)
 
 	go func() {
+		cancelCtx, cancel := context.WithCancel(context.Background())
 		ctx := &pipeline.Context{
 			Project: project,
 			CutList: cutList,
-			Cancel:  context.Background(),
+			Cancel:  cancelCtx,
 		}
+		_ = cancel
 
 		reporter := pipeline.NewEventBusReporter(s.bus, taskID)
 

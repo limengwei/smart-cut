@@ -31,10 +31,12 @@ func (s *TranscribeService) StartTranscribe(project *model.Project, modelPath st
 	taskID := fmt.Sprintf("transcribe-%s", project.ID)
 
 	go func() {
+		cancelCtx, cancel := context.WithCancel(context.Background())
 		ctx := &pipeline.Context{
 			Project: project,
-			Cancel:  context.Background(),
+			Cancel:  cancelCtx,
 		}
+		_ = cancel // 保留 cancel 引用，后续 Task 支持取消时使用
 
 		reporter := pipeline.NewEventBusReporter(s.bus, taskID)
 
@@ -68,7 +70,11 @@ func (s *TranscribeService) GetTranscript(projectID string) (*model.Transcript, 
 	if !ok {
 		return nil, fmt.Errorf("transcript not found for project %s", projectID)
 	}
-	return val.(*model.Transcript), nil
+	transcript, ok := val.(*model.Transcript)
+	if !ok {
+		return nil, fmt.Errorf("invalid transcript type for project %s", projectID)
+	}
+	return transcript, nil
 }
 
 // ProbeMedia 探测媒体文件信息（同步）

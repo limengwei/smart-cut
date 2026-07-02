@@ -27,11 +27,13 @@ func (s *AnalyzeService) StartAnalyze(project *model.Project, transcript *model.
 	taskID := fmt.Sprintf("analyze-%s", project.ID)
 
 	go func() {
+		cancelCtx, cancel := context.WithCancel(context.Background())
 		ctx := &pipeline.Context{
 			Project:    project,
 			Transcript: transcript,
-			Cancel:     context.Background(),
+			Cancel:     cancelCtx,
 		}
+		_ = cancel
 
 		reporter := pipeline.NewEventBusReporter(s.bus, taskID)
 
