@@ -39,6 +39,7 @@ func TestParseFFprobeJSON_NoAudio(t *testing.T) {
 	assert.False(t, media.HasAudio)
 	assert.Equal(t, 1280, media.Width)
 	assert.Equal(t, int64(5000), media.DurationMs)
+	assert.Equal(t, "", media.ColorTransfer)
 }
 
 func TestParseFFprobeJSON_InvalidJSON(t *testing.T) {
