@@ -61,6 +61,8 @@ func (s *TranscribeStep) Run(ctx *Context, reporter ProgressReporter) error {
 		return fmt.Errorf("transcribe: %w", err)
 	}
 
+	ctx.Transcript = transcript
+
 	reporter.Report("transcribe", "completed", 1.0)
 	reporter.Done("transcribe", transcript)
 
