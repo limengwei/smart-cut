@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { Button } from "./ui/button";
 import { formatTimecode } from "../lib/timeline";
+import { RemotionPlayer } from "./RemotionPlayer";
+import { useWorkbenchStore } from "../stores/workbench";
 
 interface Props {
   src: string | null;
@@ -12,6 +14,9 @@ interface Props {
   onTogglePlay: () => void;
   onSeek: (ms: number) => void;
   durationMs: number;
+  mediaWidth: number;
+  mediaHeight: number;
+  mediaFps: number;
 }
 
 export function VideoPreview({
@@ -23,8 +28,13 @@ export function VideoPreview({
   onTogglePlay,
   onSeek,
   durationMs,
+  mediaWidth,
+  mediaHeight,
+  mediaFps,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const subtitleEnabled = useWorkbenchStore((s) => s.subtitleEnabled);
+  const subtitleConfig = useWorkbenchStore((s) => s.subtitleConfig);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -59,14 +69,28 @@ export function VideoPreview({
     <div className="flex flex-1 flex-col items-center justify-center bg-zinc-950 p-4">
       <div className="relative w-full max-w-3xl">
         {src ? (
-          <video
-            ref={videoRef}
-            src={src}
-            onTimeUpdate={handleTimeUpdate}
-            onLoadedMetadata={(e) => (e.currentTarget.volume = 1)}
-            className="w-full rounded-lg"
-            controls={false}
-          />
+          <>
+            <video
+              ref={videoRef}
+              src={src}
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={(e) => (e.currentTarget.volume = 1)}
+              className="w-full rounded-lg"
+              controls={false}
+            />
+            {subtitleEnabled && subtitleConfig && subtitleConfig.segments.length > 0 && (
+              <div className="pointer-events-none absolute inset-0">
+                <RemotionPlayer
+                  config={subtitleConfig}
+                  playheadMs={playheadMs}
+                  durationMs={durationMs}
+                  width={mediaWidth}
+                  height={mediaHeight}
+                  fps={mediaFps}
+                />
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-border bg-zinc-900 text-muted-foreground">
             （无媒体）
