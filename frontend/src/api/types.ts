@@ -137,3 +137,8 @@ export interface WaveformPeaks {
   mins: number[];
   maxs: number[];
 }
+
+export interface SubtitleConfig {
+  segments: Segment[];
+  style: SubtitleStyle;
+}

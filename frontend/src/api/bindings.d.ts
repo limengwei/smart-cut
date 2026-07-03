@@ -8,6 +8,7 @@ declare module "../../bindings/smart-cut/app/app.js" {
     GlobalSettings,
     MediaFile,
     WaveformPeaks,
+    SubtitleConfig,
   } from "./types";
 
   export function CreateProject(name: string, mediaPath: string): Promise<Project>;
@@ -34,4 +35,6 @@ declare module "../../bindings/smart-cut/app/app.js" {
 
   export function GetWaveformPeaks(projectID: string): Promise<WaveformPeaks>;
   export function GetMediaURL(projectID: string): Promise<string>;
+
+  export function GetSubtitleConfig(projectID: string): Promise<SubtitleConfig>;
 }

@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import type { Transcript, CutList, WaveformPeaks, Segment } from "../api/types";
+import type {
+  Transcript,
+  CutList,
+  WaveformPeaks,
+  Segment,
+  SubtitleStyle,
+  SubtitleConfig,
+} from "../api/types";
 
 export type WorkflowStage = "idle" | "transcribing" | "analyzing" | "ready" | "exporting";
 
@@ -24,6 +31,14 @@ interface WorkbenchStore {
   scrollMs: number;
 
   selectedSegmentId: string | null;
+
+  subtitleEnabled: boolean;
+  subtitleStyle: SubtitleStyle | null;
+  subtitleConfig: SubtitleConfig | null;
+
+  setSubtitleEnabled: (b: boolean) => void;
+  setSubtitleStyle: (s: SubtitleStyle) => void;
+  setSubtitleConfig: (c: SubtitleConfig | null) => void;
 
   setProjectID: (id: string) => void;
   setTranscript: (t: Transcript | null) => void;
@@ -72,6 +87,14 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   scrollMs: 0,
 
   selectedSegmentId: null,
+
+  subtitleEnabled: false,
+  subtitleStyle: null,
+  subtitleConfig: null,
+
+  setSubtitleEnabled: (b) => set({ subtitleEnabled: b }),
+  setSubtitleStyle: (s) => set({ subtitleStyle: s }),
+  setSubtitleConfig: (c) => set({ subtitleConfig: c }),
 
   setProjectID: (id) => set({ projectID: id }),
   setTranscript: (t) => set({ transcript: t }),
@@ -128,5 +151,8 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
       zoom: 1,
       scrollMs: 0,
       selectedSegmentId: null,
+      subtitleEnabled: false,
+      subtitleStyle: null,
+      subtitleConfig: null,
     }),
 }));
