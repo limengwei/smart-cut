@@ -173,7 +173,7 @@ func (a *App) GetSubtitleConfig(projectID string) (*SubtitleConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	var segments []model.Segment
+	segments := []model.Segment{}
 	if t, err := a.transcribeService.GetTranscript(projectID); err == nil {
 		segments = t.Segments
 	}
