@@ -168,3 +168,103 @@ func TestTranscribeStep_Name(t *testing.T) {
 	step := NewTranscribeStep(nil, nil, adapter.WhisperOptions{}, nil)
 	assert.Equal(t, "transcribe", step.Name())
 }
+
+type mockFFmpeg struct {
+	extractErr     error
+	overlayErr     error
+	concatErr      error
+	extractedPaths []string
+	overlayedPaths []string
+}
+
+func (m *mockFFmpeg) Probe(ctx context.Context, path string) (*model.MediaFile, error) {
+	return &model.MediaFile{Width: 1920, Height: 1080, Fps: 30, HasAudio: true}, nil
+}
+
+func (m *mockFFmpeg) ExtractWaveform(ctx context.Context, mediaPath, outPng string) error {
+	return nil
+}
+
+func (m *mockFFmpeg) ExtractAudio16kWav(ctx context.Context, mediaPath, outWav string) error {
+	return nil
+}
+
+func (m *mockFFmpeg) ExtractWaveformPeaks(ctx context.Context, mediaPath string, durationMs int64, buckets int) (*model.WaveformPeaks, error) {
+	return nil, nil
+}
+
+func (m *mockFFmpeg) ExtractSegment(ctx context.Context, sourcePath string, segStartSec, segEndSec float64, media model.MediaFile, outPath string) error {
+	m.extractedPaths = append(m.extractedPaths, outPath)
+	return m.extractErr
+}
+
+func (m *mockFFmpeg) ConcatDemuxer(ctx context.Context, segmentPaths []string, outPath string) error {
+	return m.concatErr
+}
+
+func (m *mockFFmpeg) ConcatReencode(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string, opts model.EncodeOpts) error {
+	return nil
+}
+
+func (m *mockFFmpeg) MuxSubtitle(ctx context.Context, videoPath, subtitleClipPath, outPath string) error {
+	return nil
+}
+
+func (m *mockFFmpeg) OverlaySegment(ctx context.Context, videoPath, subtitlePath, outPath string) error {
+	m.overlayedPaths = append(m.overlayedPaths, outPath)
+	return m.overlayErr
+}
+
+func TestExportStep_Run_WithSubtitleClips(t *testing.T) {
+	mock := &mockFFmpeg{}
+	step := NewExportStep(mock, model.ExportOptions{Mode: model.ExportLossless})
+
+	ctx := &Context{
+		Project: &model.Project{
+			ID:      "p1",
+			WorkDir: t.TempDir(),
+			Media:   model.MediaFile{Width: 1920, Height: 1080, Fps: 30, HasAudio: true, Path: "/fake/source.mp4"},
+		},
+		CutList: &model.CutList{
+			Segments: []model.CutSegment{
+				{ID: "1", Decision: model.CutKeep, StartMs: 0, EndMs: 2000},
+			},
+		},
+		SubtitleClips: map[string]string{
+			"001": "/fake/subtitle_001.mp4",
+		},
+		Cancel: context.Background(),
+	}
+
+	err := step.Run(ctx, &mockReporter{})
+	require.NoError(t, err)
+
+	assert.Len(t, mock.extractedPaths, 1)
+	assert.Len(t, mock.overlayedPaths, 1)
+}
+
+func TestExportStep_Run_NoSubtitleClips_NoOverlay(t *testing.T) {
+	mock := &mockFFmpeg{}
+	step := NewExportStep(mock, model.ExportOptions{Mode: model.ExportLossless})
+
+	ctx := &Context{
+		Project: &model.Project{
+			ID:      "p1",
+			WorkDir: t.TempDir(),
+			Media:   model.MediaFile{Width: 1920, Height: 1080, Fps: 30, HasAudio: true, Path: "/fake/source.mp4"},
+		},
+		CutList: &model.CutList{
+			Segments: []model.CutSegment{
+				{ID: "1", Decision: model.CutKeep, StartMs: 0, EndMs: 2000},
+			},
+		},
+		SubtitleClips: nil,
+		Cancel:        context.Background(),
+	}
+
+	err := step.Run(ctx, &mockReporter{})
+	require.NoError(t, err)
+
+	assert.Len(t, mock.extractedPaths, 1)
+	assert.Len(t, mock.overlayedPaths, 0)
+}

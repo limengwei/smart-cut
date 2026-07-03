@@ -208,7 +208,7 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 		return nil
 	}
 
-	// lossless 路径：逐段提取 + concat demuxer
+	// lossless 路径：逐段提取 + 字幕 overlay + concat demuxer
 	tmpDir := filepath.Join(ctx.Project.WorkDir, "cuts")
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return fmt.Errorf("export: create cuts dir: %w", err)
@@ -218,13 +218,25 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 
 	var segPaths []string
 	for i, seg := range keepSegments {
+		segID := fmt.Sprintf("%03d", i+1)
 		startSec := float64(seg.StartMs) / 1000.0
 		endSec := float64(seg.EndMs) / 1000.0
-		segOutPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%03d.mp4", i+1))
+		segOutPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%s.mp4", segID))
 
 		if err := s.ffmpeg.ExtractSegment(ctx.Cancel, sourcePath, startSec, endSec, media, segOutPath); err != nil {
 			return fmt.Errorf("export: extract segment %d: %w", i+1, err)
 		}
+
+		if ctx.SubtitleClips != nil {
+			if subtitlePath, ok := ctx.SubtitleClips[segID]; ok {
+				overlayPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%s_overlay.mp4", segID))
+				if err := s.ffmpeg.OverlaySegment(ctx.Cancel, segOutPath, subtitlePath, overlayPath); err != nil {
+					return fmt.Errorf("export: overlay segment %d: %w", i+1, err)
+				}
+				segOutPath = overlayPath
+			}
+		}
+
 		segPaths = append(segPaths, segOutPath)
 
 		reporter.Report("export", fmt.Sprintf("extracted %d/%d", i+1, len(keepSegments)), 0.2+0.5*float64(i+1)/float64(len(keepSegments)))
