@@ -33,6 +33,12 @@ type FFmpegAdapter interface {
 	// segmentPaths: 已提取的段 mp4 列表；outPath: 输出
 	ConcatDemuxer(ctx context.Context, segmentPaths []string, outPath string) error
 
+	// OverlaySegment 将字幕透明 mp4 叠加到本段视频上，输出带字幕的视频段
+	// videoPath: ExtractSegment 产出的视频段；subtitlePath: SubtitleStep 产出的字幕透明 mp4
+	// outPath: 叠加后的输出段（替换原 videoPath 进入 concat 拼接）
+	// 假定 videoPath 和 subtitlePath 分辨率一致（均为 source 的 W×H）
+	OverlaySegment(ctx context.Context, videoPath, subtitlePath, outPath string) error
+
 	// ConcatReencode 重编码拼接（保留旧接口，逐段提取 + 重编码 concat，用于需要统一编码参数的场景）
 	ConcatReencode(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string, opts model.EncodeOpts) error
 	MuxSubtitle(ctx context.Context, videoPath, subtitleClipPath, outPath string) error
@@ -347,6 +353,34 @@ func (a *ffmpegAdapter) ConcatReencode(ctx context.Context, segments []model.Kee
 	cmd := exec.CommandContext(ctx, binaryPath, args...)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg concat reencode: %w", err)
+	}
+	return nil
+}
+
+// OverlaySegment 将字幕透明 mp4 叠加到本段视频上，输出带字幕的视频段
+func (a *ffmpegAdapter) OverlaySegment(ctx context.Context, videoPath, subtitlePath, outPath string) error {
+	binaryPath, err := a.resolver.Resolve("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg overlay segment: %w", err)
+	}
+
+	args := []string{
+		"-y",
+		"-i", videoPath,
+		"-i", subtitlePath,
+		"-filter_complex", "[1:v]format=rgba[sub];[0:v][sub]overlay=0:0",
+		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "copy",
+		"-movflags", "+faststart",
+		outPath,
+	}
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg overlay segment: %w (stderr: %s)", err, stderr.String())
 	}
 	return nil
 }
