@@ -4,6 +4,7 @@ import { Mic, BrainCircuit, Download, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Timeline } from "../components/timeline/Timeline";
 import { VideoPreview } from "../components/VideoPreview";
+import { SubtitleStylePanel } from "../components/SubtitleStylePanel";
 import { AISuggestions } from "../components/AISuggestions";
 import { useWorkbenchStore, type WorkflowStage } from "../stores/workbench";
 import { useProjectStore } from "../stores/project";
@@ -18,6 +19,8 @@ import {
   startExport,
   addCutSegment,
   updateCutSegment,
+  saveProject,
+  getSubtitleConfig,
 } from "../api/client";
 import {
   onProgress,
@@ -25,7 +28,7 @@ import {
   onTranscriptSegment,
   onCutListReady,
 } from "../api/events";
-import type { CutSegment, ExportOptions } from "../api/types";
+import type { CutSegment, ExportOptions, SubtitleStyle } from "../api/types";
 
 const stageButtonConfig: Record<
   string,
@@ -36,6 +39,16 @@ const stageButtonConfig: Record<
   export: { label: "导出", icon: Download, stage: "exporting" },
 };
 void stageButtonConfig;
+
+const defaultSubtitleStyle: SubtitleStyle = {
+  fontFamily: "sans-serif",
+  fontSize: 48,
+  color: "#FFFFFF",
+  highlight: "#FFEB3B",
+  position: "bottom",
+  bgColor: "#000000",
+  bgOpacity: 0.6,
+};
 
 export function Workbench() {
   const { id } = useParams<{ id: string }>();
@@ -73,6 +86,14 @@ export function Workbench() {
       } catch {
         wb.setPeaks(null);
       }
+      try {
+        const sc = await getSubtitleConfig(projectID);
+        wb.setSubtitleConfig(sc);
+        wb.setSubtitleStyle(sc.style);
+        wb.setSubtitleEnabled(sc.segments.length > 0);
+      } catch {
+        wb.setSubtitleConfig(null);
+      }
     } catch (e) {
       wb.setError("加载数据失败: " + String(e));
     } finally {
@@ -99,6 +120,9 @@ export function Workbench() {
       if (ev.stage === "transcribe" && ev.status === "running") wb.setStage("transcribing");
       if (ev.stage === "analyze" && ev.status === "running") wb.setStage("analyzing");
       if (ev.stage === "export" && ev.status === "running") wb.setStage("exporting");
+      if (ev.stage === "subtitle" && ev.status === "running") {
+        // subtitle 进度在 export 流程内，仅记录 step
+      }
       if (ev.status === "error") wb.setError(ev.error ?? "任务失败");
     });
     const off2 = onTranscriptReady((t) => {
@@ -236,6 +260,20 @@ export function Workbench() {
     }
   };
 
+  const handleSubtitleStyleChange = async (s: SubtitleStyle) => {
+    wb.setSubtitleStyle(s);
+    if (currentProject) {
+      const updated = { ...currentProject, settings: { ...currentProject.settings, subtitleStyle: s } };
+      setCurrentProject(updated);
+      try {
+        await saveProject(updated);
+        if (wb.subtitleConfig) wb.setSubtitleConfig({ ...wb.subtitleConfig, style: s });
+      } catch (e) {
+        wb.setError("保存字幕样式失败: " + String(e));
+      }
+    }
+  };
+
   const loopSegment = wb.selectedSegmentId && wb.cutList
     ? (() => {
         const seg = wb.cutList.segments.find((s) => s.id === wb.selectedSegmentId);
@@ -289,6 +327,15 @@ export function Workbench() {
           onTogglePlay={() => wb.setPlaying(!wb.isPlaying)}
           onSeek={handleSeek}
           durationMs={durationMs}
+          mediaWidth={currentProject?.media.width ?? 1920}
+          mediaHeight={currentProject?.media.height ?? 1080}
+          mediaFps={currentProject?.media.fps ?? 30}
+        />
+        <SubtitleStylePanel
+          enabled={wb.subtitleEnabled}
+          style={wb.subtitleStyle ?? defaultSubtitleStyle}
+          onToggleEnabled={wb.setSubtitleEnabled}
+          onChangeStyle={handleSubtitleStyleChange}
         />
         <AISuggestions
           cutList={wb.cutList}
