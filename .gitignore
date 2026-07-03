@@ -7,3 +7,7 @@ build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 *.exe
 frontend/bindings
 frontend/.bindings-tmp-*
+resources/remotion/node_modules
+resources/remotion/debug.log
+resources/remotion/*.webm
+resources/remotion/.remotion
