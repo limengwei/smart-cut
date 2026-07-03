@@ -19,6 +19,7 @@ type TranscribeStep struct {
 	bus     *eventbus.EventBus
 	opts    adapter.WhisperOptions
 }
+
 func NewTranscribeStep(whisper adapter.WhisperAdapter, ffmpeg adapter.FFmpegAdapter, opts adapter.WhisperOptions, bus *eventbus.EventBus) *TranscribeStep {
 	return &TranscribeStep{whisper: whisper, ffmpeg: ffmpeg, opts: opts, bus: bus}
 }
@@ -59,7 +60,6 @@ func (s *TranscribeStep) Run(ctx *Context, reporter ProgressReporter) error {
 	if err != nil {
 		return fmt.Errorf("transcribe: %w", err)
 	}
-
 
 	reporter.Report("transcribe", "completed", 1.0)
 	reporter.Done("transcribe", transcript)
@@ -242,17 +242,98 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 	return nil
 }
 
-// —— SubtitleStep (MVP 占位) ——
+// —— SubtitleStep（整句高亮字幕渲染）——
 
-type SubtitleStep struct{}
+type SubtitleStep struct {
+	remotion adapter.RemotionAdapter
+}
 
-func NewSubtitleStep() *SubtitleStep {
-	return &SubtitleStep{}
+func NewSubtitleStep(remotion adapter.RemotionAdapter) *SubtitleStep {
+	return &SubtitleStep{remotion: remotion}
 }
 
 func (s *SubtitleStep) Name() string { return "subtitle" }
 
 func (s *SubtitleStep) Run(ctx *Context, reporter ProgressReporter) error {
-	reporter.Report("subtitle", "skipped (MVP)", 1.0)
+	if ctx.Transcript == nil || len(ctx.Transcript.Segments) == 0 {
+		reporter.Report("subtitle", "no transcript segments, skipping", 1.0)
+		return nil
+	}
+	if ctx.CutList == nil {
+		reporter.Report("subtitle", "no cutlist, skipping", 1.0)
+		return nil
+	}
+
+	keepSegments := ctx.CutList.KeepSegments()
+	if len(keepSegments) == 0 {
+		reporter.Report("subtitle", "no keep segments", 1.0)
+		return nil
+	}
+
+	reporter.Report("subtitle", fmt.Sprintf("rendering %d segments", len(keepSegments)), 0.0)
+
+	clipDir := filepath.Join(ctx.Project.WorkDir, "subtitle_clips")
+	if err := os.MkdirAll(clipDir, 0755); err != nil {
+		return fmt.Errorf("subtitle: create clip dir: %w", err)
+	}
+
+	clips := make(map[string]string)
+	completed := 0
+	total := len(keepSegments)
+
+	for i, seg := range keepSegments {
+		segID := fmt.Sprintf("%03d", i+1)
+
+		// 筛出落在本 keep 段内的 transcript 句段，并偏移为段内相对时间
+		var relSegs []model.Segment
+		for _, ts := range ctx.Transcript.Segments {
+			if ts.EndMs <= seg.StartMs || ts.StartMs >= seg.EndMs {
+				continue // 不相交
+			}
+			start := ts.StartMs - seg.StartMs
+			if start < 0 {
+				start = 0
+			}
+			end := ts.EndMs - seg.StartMs
+			if end > seg.EndMs-seg.StartMs {
+				end = seg.EndMs - seg.StartMs
+			}
+			relSegs = append(relSegs, model.Segment{
+				ID:      ts.ID,
+				StartMs: start,
+				EndMs:   end,
+				Text:    ts.Text,
+			})
+		}
+
+		req := adapter.SubtitleSegmentRequest{
+			SegmentID: segID,
+			StartMs:   seg.StartMs,
+			EndMs:     seg.EndMs,
+			Segments:  relSegs,
+			Style:     ctx.Project.Settings.SubtitleStyle,
+			Width:     ctx.Project.Media.Width,
+			Height:    ctx.Project.Media.Height,
+			Fps:       ctx.Project.Media.Fps,
+			OutputDir: clipDir,
+		}
+
+		// 失败回退：记日志但不中断，该段跳过字幕（见 spec 6.2 第 3 条）
+		clipPath, err := s.remotion.RenderSegment(ctx.Cancel, req, func(ratio float64) {
+			overall := (float64(completed) + ratio) / float64(total)
+			reporter.Report("subtitle", fmt.Sprintf("rendering %d/%d", i+1, total), overall)
+		})
+		if err != nil {
+			log.Printf("[Subtitle] 段 %d 渲染失败，跳过该段字幕: %v", i+1, err)
+			completed++
+			continue
+		}
+		clips[segID] = clipPath
+		completed++
+		reporter.Report("subtitle", fmt.Sprintf("rendered %d/%d", i+1, total), float64(completed)/float64(total))
+	}
+
+	ctx.SubtitleClips = clips
+	reporter.Report("subtitle", fmt.Sprintf("completed (%d/%d succeeded)", len(clips), total), 1.0)
 	return nil
 }

@@ -157,7 +157,7 @@ func TestExportStep_Run_NoKeepSegments(t *testing.T) {
 }
 
 func TestSubtitleStep_Run_MVPSkips(t *testing.T) {
-	step := NewSubtitleStep()
+	step := NewSubtitleStep(nil)
 	ctx := &Context{Cancel: context.Background()}
 
 	err := step.Run(ctx, &mockReporter{})

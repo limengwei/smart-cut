@@ -9,11 +9,12 @@ import (
 
 // Context 在 Pipeline 各 Step 间共享数据
 type Context struct {
-	Project    *model.Project
-	Transcript *model.Transcript
-	CutList    *model.CutList
-	ExportPath string
-	Cancel     context.Context
+	Project       *model.Project
+	Transcript    *model.Transcript
+	CutList       *model.CutList
+	ExportPath    string
+	SubtitleClips map[string]string // segID → 字幕透明 mp4 路径（仅 IncludeSubtitle=true 时填充）
+	Cancel        context.Context
 }
 
 // Step 定义一个处理阶段
