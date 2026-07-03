@@ -368,7 +368,7 @@ func (a *ffmpegAdapter) OverlaySegment(ctx context.Context, videoPath, subtitleP
 		"-y",
 		"-i", videoPath,
 		"-i", subtitlePath,
-		"-filter_complex", "[1:v]format=rgba[sub];[0:v][sub]overlay=0:0",
+		"-filter_complex", buildOverlayFilter(),
 		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "copy",
@@ -462,6 +462,11 @@ func BuildAudioFadeChain(durationSec float64) string {
 		fadeOutStart = 0
 	}
 	return fmt.Sprintf("afade=t=in:st=0:d=%.3f,afade=t=out:st=%.3f:d=%.3f", audioFadeSec, fadeOutStart, audioFadeSec)
+}
+
+// buildOverlayFilter 构造 overlay filter_complex 字符串，用于将字幕透明 mp4 叠加到视频段上
+func buildOverlayFilter() string {
+	return "[1:v]format=rgba[sub];[0:v][sub]overlay=0:0"
 }
 
 // ffmpegProgressRegex 匹配 ffmpeg stderr 的 time= 行
