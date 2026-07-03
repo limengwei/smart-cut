@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"smart-cut/internal/model"
 )
@@ -101,19 +102,37 @@ func (a *remotionCLIAdapter) RenderSegment(ctx context.Context, req SubtitleSegm
 		return "", fmt.Errorf("remotion render: stdout pipe: %w", err)
 	}
 	var stderrBuf strings.Builder
-	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("remotion render: start: %w", err)
 	}
 
+	// 并发 drain stderr，避免 worker 写满 stderr pipe buffer 后阻塞 stdout（防死锁）
+	var stderrWG sync.WaitGroup
+	stderrPipe, err := cmd.StderrPipe()
+	if err == nil {
+		stderrWG.Add(1)
+		go func() {
+			defer stderrWG.Done()
+			scanner := bufio.NewScanner(stderrPipe)
+			scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+			for scanner.Scan() {
+				stderrBuf.WriteString(scanner.Text() + "\n")
+			}
+		}()
+	}
+
 	resultPath, perr := parseWorkerStdout(stdoutPipe, onProgress)
 
-	if werr := cmd.Wait(); werr != nil {
-		return "", fmt.Errorf("remotion render: worker exit: %w (stderr: %s)", werr, stderrBuf.String())
-	}
+	werr := cmd.Wait()
+	stderrWG.Wait() // 确保 stderr drain 完成，stderrBuf 内容完整
+
+	// 优先返回 worker 自报的具体错误（perr），再回退到进程退出错误
 	if perr != nil {
-		return "", perr
+		return "", fmt.Errorf("remotion render: %w (stderr: %s)", perr, stderrBuf.String())
+	}
+	if werr != nil {
+		return "", fmt.Errorf("remotion render: worker exit: %w (stderr: %s)", werr, stderrBuf.String())
 	}
 	if resultPath == "" {
 		return "", fmt.Errorf("remotion render: worker 未输出 DONE（stderr: %s）", stderrBuf.String())
