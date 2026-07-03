@@ -17,6 +17,7 @@ type App struct {
 	analyzeService    *service.AnalyzeService
 	editService       *service.EditService
 	exportService     *service.ExportService
+	subtitleService   *service.SubtitleService
 	configManager     *config.ConfigManager
 	binaryResolver    *adapter.BinaryResolver
 	mediaServer       *mediaServer
@@ -31,6 +32,7 @@ func NewApp(
 	analyzeService *service.AnalyzeService,
 	editService *service.EditService,
 	exportService *service.ExportService,
+	subtitleService *service.SubtitleService,
 	configManager *config.ConfigManager,
 	binaryResolver *adapter.BinaryResolver,
 	mediaServer *mediaServer,
@@ -41,6 +43,7 @@ func NewApp(
 		analyzeService:    analyzeService,
 		editService:       editService,
 		exportService:     exportService,
+		subtitleService:   subtitleService,
 		configManager:     configManager,
 		binaryResolver:    binaryResolver,
 		mediaServer:       mediaServer,

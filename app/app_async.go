@@ -5,6 +5,7 @@ import (
 	"log"
 	"path/filepath"
 
+	"smart-cut/internal/adapter"
 	"smart-cut/internal/model"
 )
 
@@ -84,7 +85,18 @@ func (a *App) StartExport(projectID string, opts model.ExportOptions) (string, e
 		return "", NewAppError(ErrCodeParam, "剪切清单不存在，请先完成分析", err.Error())
 	}
 
-	taskID := a.exportService.StartExport(project, cl, opts)
+	// 获取转录结果（字幕渲染需要，未转录则为 nil）
+	var transcript *model.Transcript
+	if t, err := a.transcribeService.GetTranscript(projectID); err == nil {
+		transcript = t
+	}
+
+	var remotionAdp adapter.RemotionAdapter
+	if a.subtitleService != nil {
+		remotionAdp = a.subtitleService.Adapter()
+	}
+
+	taskID := a.exportService.StartExport(project, cl, transcript, opts, remotionAdp)
 	return taskID, nil
 }
 
@@ -147,4 +159,26 @@ func (a *App) ProbeMedia(path string) (*model.MediaFile, error) {
 		return nil, NewAppError(ErrCodeParam, "媒体文件探测失败", err.Error())
 	}
 	return mf, nil
+}
+
+// SubtitleConfig 前端 Player 所需的字幕配置
+type SubtitleConfig struct {
+	Segments []model.Segment     `json:"segments"`
+	Style    model.SubtitleStyle `json:"style"`
+}
+
+// GetSubtitleConfig 返回前端 Player 所需的字幕配置（句段 + 样式）
+func (a *App) GetSubtitleConfig(projectID string) (*SubtitleConfig, error) {
+	project, err := a.GetProject(projectID)
+	if err != nil {
+		return nil, err
+	}
+	var segments []model.Segment
+	if t, err := a.transcribeService.GetTranscript(projectID); err == nil {
+		segments = t.Segments
+	}
+	return &SubtitleConfig{
+		Segments: segments,
+		Style:    project.Settings.SubtitleStyle,
+	}, nil
 }

@@ -23,20 +23,31 @@ func NewExportService(ffmpeg adapter.FFmpegAdapter, bus *eventbus.EventBus) *Exp
 }
 
 // StartExport 启动导出任务（异步）
-func (s *ExportService) StartExport(project *model.Project, cutList *model.CutList, opts model.ExportOptions) string {
+func (s *ExportService) StartExport(project *model.Project, cutList *model.CutList, transcript *model.Transcript, opts model.ExportOptions, remotionAdp adapter.RemotionAdapter) string {
 	taskID := fmt.Sprintf("export-%s", project.ID)
 
 	go func() {
 		cancelCtx, cancel := context.WithCancel(context.Background())
 		ctx := &pipeline.Context{
-			Project: project,
-			CutList: cutList,
-			Cancel:  cancelCtx,
+			Project:    project,
+			CutList:    cutList,
+			Transcript: transcript,
+			Cancel:     cancelCtx,
 		}
 		_ = cancel
 
 		reporter := pipeline.NewEventBusReporter(s.bus, taskID)
 
+		// 1. 字幕渲染（仅 IncludeSubtitle=true 且有 RemotionAdapter）
+		if opts.IncludeSubtitle && remotionAdp != nil && transcript != nil && len(transcript.Segments) > 0 {
+			subStep := pipeline.NewSubtitleStep(remotionAdp)
+			if err := subStep.Run(ctx, reporter); err != nil {
+				log.Printf("[Export] SubtitleStep 失败（继续无字幕导出）: %v", err)
+				ctx.SubtitleClips = nil
+			}
+		}
+
+		// 2. 视频导出
 		step := pipeline.NewExportStep(s.ffmpeg, opts)
 
 		if err := step.Run(ctx, reporter); err != nil {

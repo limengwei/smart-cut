@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"path/filepath"
 
 	"smart-cut/app"
 	"smart-cut/internal/adapter"
@@ -34,6 +35,11 @@ func main() {
 	analyzeService := service.NewAnalyzeService(llmAdapter, bus, editService)
 	exportService := service.NewExportService(ffmpegAdapter, bus)
 
+	// 6.5 字幕服务（Remotion 渲染编排）
+	workerScript := filepath.Join("resources", "remotion", "render-worker.js")
+	remotionAdp := adapter.NewRemotionAdapter(resolver, workerScript)
+	subtitleService := service.NewSubtitleService(remotionAdp)
+
 	// 6. 媒体服务（本地 HTTP，供 webview 访问媒体文件）
 	mediaServer, err := app.NewMediaServer()
 	if err != nil {
@@ -48,6 +54,7 @@ func main() {
 		analyzeService,
 		editService,
 		exportService,
+		subtitleService,
 		configManager,
 		resolver,
 		mediaServer,
