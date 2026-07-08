@@ -39,6 +39,16 @@ type FFmpegAdapter interface {
 	// 假定 videoPath 和 subtitlePath 分辨率一致（均为 source 的 W×H）
 	OverlaySegment(ctx context.Context, videoPath, subtitlePath, outPath string) error
 
+	// OverlaySegmentWithOverlay 将字幕透明 mp4 和 overlay 透明 mp4 叠加到本段视频上
+	// videoPath: ExtractSegment 产出的视频段
+	// subtitlePath: SubtitleStep 产出的字幕透明 mp4（可为空，表示无字幕）
+	// overlayPath: OverlayStep 产出的 overlay 透明 mp4（可为空，表示无 overlay）
+	// outPath: 叠加后的输出段
+	OverlaySegmentWithOverlay(ctx context.Context, videoPath, subtitlePath, overlayPath, outPath string) error
+
+	// OverlaySegmentPIP 全屏模式：将视频缩小为画中画叠加到 overlay 层上
+	OverlaySegmentPIP(ctx context.Context, videoPath, overlayPath, outPath string) error
+
 	// ConcatReencode 重编码拼接（保留旧接口，逐段提取 + 重编码 concat，用于需要统一编码参数的场景）
 	ConcatReencode(ctx context.Context, segments []model.KeepSegment, sourcePath, outPath string, opts model.EncodeOpts) error
 	MuxSubtitle(ctx context.Context, videoPath, subtitleClipPath, outPath string) error
@@ -385,6 +395,74 @@ func (a *ffmpegAdapter) OverlaySegment(ctx context.Context, videoPath, subtitleP
 	return nil
 }
 
+func (a *ffmpegAdapter) OverlaySegmentWithOverlay(ctx context.Context, videoPath, subtitlePath, overlayPath, outPath string) error {
+	binaryPath, err := a.resolver.Resolve("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg dual overlay: %w", err)
+	}
+
+	hasSubtitle := subtitlePath != ""
+	hasOverlay := overlayPath != ""
+
+	args := []string{"-y"}
+
+	if hasSubtitle && hasOverlay {
+		args = append(args, "-i", videoPath, "-i", subtitlePath, "-i", overlayPath)
+		args = append(args, "-filter_complex", buildDualOverlayFilter())
+	} else if hasSubtitle {
+		args = append(args, "-i", videoPath, "-i", subtitlePath)
+		args = append(args, "-filter_complex", buildOverlayFilter())
+	} else if hasOverlay {
+		args = append(args, "-i", videoPath, "-i", overlayPath)
+		args = append(args, "-filter_complex", buildOverlayFilter())
+	} else {
+		return fmt.Errorf("ffmpeg dual overlay: no subtitle or overlay to overlay")
+	}
+
+	args = append(args,
+		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "copy",
+		"-movflags", "+faststart",
+		outPath,
+	)
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg dual overlay: %w (stderr: %s)", err, stderr.String())
+	}
+	return nil
+}
+
+func (a *ffmpegAdapter) OverlaySegmentPIP(ctx context.Context, videoPath, overlayPath, outPath string) error {
+	binaryPath, err := a.resolver.Resolve("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg pip overlay: %w", err)
+	}
+
+	args := []string{
+		"-y",
+		"-i", videoPath,
+		"-i", overlayPath,
+		"-filter_complex", buildPIPOverlayFilter(),
+		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "copy",
+		"-movflags", "+faststart",
+		outPath,
+	}
+
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg pip overlay: %w (stderr: %s)", err, stderr.String())
+	}
+	return nil
+}
+
 func (a *ffmpegAdapter) MuxSubtitle(ctx context.Context, videoPath, subtitleClipPath, outPath string) error {
 	binaryPath, err := a.resolver.Resolve("ffmpeg")
 	if err != nil {
@@ -467,6 +545,20 @@ func BuildAudioFadeChain(durationSec float64) string {
 // buildOverlayFilter 构造 overlay filter_complex 字符串，用于将字幕透明 mp4 叠加到视频段上
 func buildOverlayFilter() string {
 	return "[1:v]format=rgba[sub];[0:v][sub]overlay=0:0"
+}
+
+// buildDualOverlayFilter 构造双 overlay filter_complex 字符串
+// 输入: [0:v] 视频段, [1:v] 字幕透明层, [2:v] overlay 透明层
+// 先叠加字幕层，再叠加 overlay 层
+func buildDualOverlayFilter() string {
+	return "[1:v]format=rgba[sub];[0:v][sub]overlay=0:0[subbed];[2:v]format=rgba[ov];[subbed][ov]overlay=0:0"
+}
+
+// buildPIPOverlayFilter 全屏模式：视频缩小为画中画，叠加到 overlay 透明层上
+// 输入: [0:v] 视频段, [1:v] overlay 透明层（全屏卡片背景）
+// 视频缩小到 22% 置于右下角
+func buildPIPOverlayFilter() string {
+	return "[0:v]scale=iw*0.22:-1:flags=lanczos[pip];[1:v]format=rgba[bg];[bg][pip]overlay=W-w-20:H-h-20"
 }
 
 // ffmpegProgressRegex 匹配 ffmpeg stderr 的 time= 行

@@ -170,11 +170,13 @@ func TestTranscribeStep_Name(t *testing.T) {
 }
 
 type mockFFmpeg struct {
-	extractErr     error
-	overlayErr     error
-	concatErr      error
-	extractedPaths []string
-	overlayedPaths []string
+	extractErr           error
+	overlayErr           error
+	concatErr            error
+	overlayWithOverlayErr error
+	overlayPIPErr         error
+	extractedPaths       []string
+	overlayedPaths       []string
 }
 
 func (m *mockFFmpeg) Probe(ctx context.Context, path string) (*model.MediaFile, error) {
@@ -213,6 +215,14 @@ func (m *mockFFmpeg) MuxSubtitle(ctx context.Context, videoPath, subtitleClipPat
 func (m *mockFFmpeg) OverlaySegment(ctx context.Context, videoPath, subtitlePath, outPath string) error {
 	m.overlayedPaths = append(m.overlayedPaths, outPath)
 	return m.overlayErr
+}
+
+func (m *mockFFmpeg) OverlaySegmentWithOverlay(ctx context.Context, videoPath, subtitlePath, overlayPath, outPath string) error {
+	return m.overlayWithOverlayErr
+}
+
+func (m *mockFFmpeg) OverlaySegmentPIP(ctx context.Context, videoPath, overlayPath, outPath string) error {
+	return m.overlayPIPErr
 }
 
 func TestExportStep_Run_WithSubtitleClips(t *testing.T) {
