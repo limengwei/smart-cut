@@ -51,6 +51,8 @@ type ProjectSettings struct {
 	FillerDict    []string      `json:"fillerDict"`
 	LLMConfig     LLMConfig     `json:"llmConfig"`
 	SubtitleStyle SubtitleStyle `json:"subtitleStyle"`
+	OverlayItems  []OverlayItem `json:"overlayItems"`
+	OverlayStyle  OverlayStyle  `json:"overlayStyle"`
 }
 
 // SubtitleStyle 字幕样式
