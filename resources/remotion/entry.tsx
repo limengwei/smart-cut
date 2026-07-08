@@ -1,5 +1,6 @@
 import React from "react";
 import { AbsoluteFill, Composition, registerRoot, useCurrentFrame, useVideoConfig } from "remotion";
+import OverlayComp from "./OverlayComp";
 
 interface SubtitleCompSegment {
   id: number;
@@ -89,15 +90,26 @@ const SubtitleComp: React.FC<Props> = ({ segments, style }) => {
 
 export const RemotionRoot: React.FC = () => {
   return (
-    <Composition
-      id="subtitle"
-      component={SubtitleComp}
-      durationInFrames={1}
-      fps={30}
-      width={1920}
-      height={1080}
-      defaultProps={{ segments: [], style: {} }}
-    />
+    <>
+      <Composition
+        id="subtitle"
+        component={SubtitleComp}
+        durationInFrames={1}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{ segments: [], style: {} }}
+      />
+      <Composition
+        id="overlay"
+        component={OverlayComp}
+        durationInFrames={1}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{ items: [], style: {} }}
+      />
+    </>
   );
 };
 

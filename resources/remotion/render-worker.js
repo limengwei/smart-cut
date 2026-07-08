@@ -39,7 +39,7 @@ async function main() {
     return;
   }
 
-  const { startMs, endMs, segments, style, width, height, fps, outputPath } = input;
+  const { startMs, endMs, segments, overlayItems, style, width, height, fps, outputPath, composition } = input;
   const effectiveFps = fps > 0 ? fps : 30;
   const safeWidth = width > 0 ? width : 1920;
   const safeHeight = height > 0 ? height : 1080;
@@ -67,12 +67,17 @@ async function main() {
   }
   emit({ type: "progress", progress: 0.5 });
 
+  const compId = composition === "overlay" ? "overlay" : "subtitle";
+  const inputProps = composition === "overlay"
+    ? { items: overlayItems || [], style }
+    : { segments: segments || [], style };
+
   let comp;
   try {
     comp = await selectComposition({
       serveUrl,
-      id: "subtitle",
-      inputProps: { segments, style },
+      id: compId,
+      inputProps,
     });
   } catch (e) {
     fail("selectComposition failed: " + e.message);
