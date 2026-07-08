@@ -37,6 +37,8 @@ export interface ProjectSettings {
   fillerDict: string[];
   llmConfig: LLMConfig;
   subtitleStyle: SubtitleStyle;
+  overlayItems: OverlayItem[];
+  overlayStyle: OverlayStyle;
 }
 
 export interface Project {
@@ -146,4 +148,52 @@ export interface SubtitleConfig {
 export interface FileFilter {
   displayName: string;
   pattern: string;
+}
+
+export type OverlayDisplayMode = "overlay" | "fullscreen";
+export type OverlayType = "card";
+
+export interface AnimationConfig {
+  in: string;
+  out: string;
+  duration: number;
+}
+
+export interface PositionConfig {
+  x: string;
+  y: string;
+}
+
+export interface CardContent {
+  title: string;
+  body?: string;
+  bulletPoints?: string[];
+  icon?: string;
+  bigNumber?: string;
+  accentColor?: string;
+  bgColor?: string;
+}
+
+export interface OverlayItem {
+  id: string;
+  type: OverlayType;
+  mode: OverlayDisplayMode;
+  startMs: number;
+  endMs: number;
+  animation: AnimationConfig;
+  position: PositionConfig;
+  content: CardContent;
+}
+
+export interface OverlayStyle {
+  accentColor: string;
+  cardBgColor: string;
+  cardRadius: number;
+  fontFamily: string;
+  showAnimations: boolean;
+}
+
+export interface OverlayConfig {
+  items: OverlayItem[];
+  style: OverlayStyle;
 }
