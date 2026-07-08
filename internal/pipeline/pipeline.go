@@ -14,6 +14,7 @@ type Context struct {
 	CutList       *model.CutList
 	ExportPath    string
 	SubtitleClips map[string]string // segID → 字幕透明 mp4 路径（仅 IncludeSubtitle=true 时填充）
+	OverlayClips  map[string]string // segID → overlay 透明 mp4 路径
 	Cancel        context.Context
 }
 
