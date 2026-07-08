@@ -16,6 +16,7 @@ import (
 // RemotionAdapter 封装对 Node render-worker.js 的调用
 type RemotionAdapter interface {
 	RenderSegment(ctx context.Context, req SubtitleSegmentRequest, onProgress func(ratio float64)) (clipPath string, err error)
+	RenderOverlaySegment(ctx context.Context, req OverlaySegmentRequest, onProgress func(ratio float64)) (string, error)
 }
 
 // SubtitleSegmentRequest 渲染单个 keep 段字幕的请求
@@ -31,6 +32,19 @@ type SubtitleSegmentRequest struct {
 	OutputDir string              `json:"outputDir"` // 段字幕 mp4 输出目录
 }
 
+// OverlaySegmentRequest 渲染单个 keep 段 overlay 的请求
+type OverlaySegmentRequest struct {
+	SegmentID    string              `json:"segmentId"`
+	StartMs      int64               `json:"startMs"`
+	EndMs        int64               `json:"endMs"`
+	OverlayItems []model.OverlayItem `json:"overlayItems"`
+	Style        model.OverlayStyle  `json:"style"`
+	Width        int                 `json:"width"`
+	Height       int                 `json:"height"`
+	Fps          float64             `json:"fps"`
+	OutputDir    string              `json:"outputDir"`
+}
+
 // workerInput 传给 render-worker.js stdin 的 JSON 结构（与 SubtitleSegmentRequest 几乎一致，额外带 outputPath）
 type workerInput struct {
 	SegmentID  string              `json:"segmentId"`
@@ -42,6 +56,19 @@ type workerInput struct {
 	Height     int                 `json:"height"`
 	Fps        float64             `json:"fps"`
 	OutputPath string              `json:"outputPath"`
+}
+
+type workerOverlayInput struct {
+	SegmentID    string              `json:"segmentId"`
+	StartMs      int64               `json:"startMs"`
+	EndMs        int64               `json:"endMs"`
+	OverlayItems []model.OverlayItem `json:"overlayItems"`
+	Style        model.OverlayStyle  `json:"style"`
+	Width        int                 `json:"width"`
+	Height       int                 `json:"height"`
+	Fps          float64             `json:"fps"`
+	OutputPath   string              `json:"outputPath"`
+	Composition  string              `json:"composition"`
 }
 
 // workerOutput render-worker.js stdout 按行输出的结构
@@ -136,6 +163,79 @@ func (a *remotionCLIAdapter) RenderSegment(ctx context.Context, req SubtitleSegm
 	}
 	if resultPath == "" {
 		return "", fmt.Errorf("remotion render: worker 未输出 DONE（stderr: %s）", stderrBuf.String())
+	}
+	return resultPath, nil
+}
+
+func (a *remotionCLIAdapter) RenderOverlaySegment(ctx context.Context, req OverlaySegmentRequest, onProgress func(ratio float64)) (string, error) {
+	nodePath, err := a.resolver.Resolve("node")
+	if err != nil {
+		return "", fmt.Errorf("remotion overlay render: %w", err)
+	}
+
+	if req.EndMs <= req.StartMs {
+		return "", fmt.Errorf("remotion overlay render: invalid segment duration %d-%d", req.StartMs, req.EndMs)
+	}
+
+	outputPath := filepath.Join(req.OutputDir, fmt.Sprintf("overlay_%s.mp4", req.SegmentID))
+
+	input := workerOverlayInput{
+		SegmentID:    req.SegmentID,
+		StartMs:      req.StartMs,
+		EndMs:        req.EndMs,
+		OverlayItems: req.OverlayItems,
+		Style:        req.Style,
+		Width:        req.Width,
+		Height:       req.Height,
+		Fps:          req.Fps,
+		OutputPath:   outputPath,
+		Composition:  "overlay",
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return "", fmt.Errorf("remotion overlay render: marshal input: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, nodePath, a.workerScript)
+	cmd.Stdin = strings.NewReader(string(inputJSON) + "\n")
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("remotion overlay render: stdout pipe: %w", err)
+	}
+	var stderrBuf strings.Builder
+
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("remotion overlay render: start: %w", err)
+	}
+
+	var stderrWG sync.WaitGroup
+	stderrPipe, err := cmd.StderrPipe()
+	if err == nil {
+		stderrWG.Add(1)
+		go func() {
+			defer stderrWG.Done()
+			scanner := bufio.NewScanner(stderrPipe)
+			scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+			for scanner.Scan() {
+				stderrBuf.WriteString(scanner.Text() + "\n")
+			}
+		}()
+	}
+
+	resultPath, perr := parseWorkerStdout(stdoutPipe, onProgress)
+
+	werr := cmd.Wait()
+	stderrWG.Wait()
+
+	if perr != nil {
+		return "", fmt.Errorf("remotion overlay render: %w (stderr: %s)", perr, stderrBuf.String())
+	}
+	if werr != nil {
+		return "", fmt.Errorf("remotion overlay render: worker exit: %w (stderr: %s)", werr, stderrBuf.String())
+	}
+	if resultPath == "" {
+		return "", fmt.Errorf("remotion overlay render: worker 未输出 DONE (stderr: %s)", stderrBuf.String())
 	}
 	return resultPath, nil
 }
