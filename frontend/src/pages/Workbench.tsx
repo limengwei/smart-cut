@@ -19,6 +19,7 @@ import {
   startExport,
   addCutSegment,
   updateCutSegment,
+  removeCutSegment,
   saveProject,
   getSubtitleConfig,
 } from "../api/client";
@@ -212,6 +213,18 @@ export function Workbench() {
     }
   };
 
+  const handleDeleteSegment = async (segID: string) => {
+    if (!id || !wb.cutList) return;
+    try {
+      await removeCutSegment(id, segID);
+      const fresh = await getCutList(id);
+      wb.setCutList(fresh);
+      if (wb.selectedSegmentId === segID) wb.selectSegment(null);
+    } catch (e) {
+      wb.setError("删除失败: " + String(e));
+    }
+  };
+
   const handleAccept = async (segID: string) => {
     if (!id || !wb.cutList) return;
     const seg = wb.cutList.segments.find((s) => s.id === segID);
@@ -342,7 +355,7 @@ export function Workbench() {
           selectedSegmentId={wb.selectedSegmentId}
           onSelect={wb.selectSegment}
           onAccept={handleAccept}
-          onReject={wb.selectSegment}
+          onReject={handleDeleteSegment}
           loading={wb.stage === "analyzing"}
         />
       </div>
@@ -364,6 +377,7 @@ export function Workbench() {
         onZoomFit={wb.zoomFit}
         onSelectSegment={wb.selectSegment}
         onToggleSegment={handleToggleSegment}
+        onDeleteSegment={handleDeleteSegment}
         onDragBoundary={handleDragBoundary}
         onAddManual={handleAddManual}
       />

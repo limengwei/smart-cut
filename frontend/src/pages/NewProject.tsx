@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import { createProject, probeMedia } from "../api/client";
+import { createProject, probeMedia, pickFile } from "../api/client";
 import { useProjectStore } from "../stores/project";
 import type { MediaFile } from "../api/types";
 
@@ -27,6 +27,22 @@ export function NewProject() {
     } catch (e) {
       setError("媒体文件探测失败: " + String(e));
       setMediaInfo(null);
+    }
+  };
+
+  const handlePickFile = async () => {
+    try {
+      const path = await pickFile("选择视频文件", [
+        { displayName: "视频文件", pattern: "*.mp4;*.mov;*.avi;*.mkv;*.webm;*.flv" },
+      ]);
+      if (path) {
+        setMediaPath(path);
+        const info = await probeMedia(path);
+        setMediaInfo(info);
+        setError("");
+      }
+    } catch (e) {
+      setError("选择文件失败: " + String(e));
     }
   };
 
@@ -81,6 +97,9 @@ export function NewProject() {
                 onChange={(e) => setMediaPath(e.target.value)}
                 placeholder="/path/to/video.mp4"
               />
+              <Button variant="outline" size="sm" onClick={handlePickFile}>
+                选择文件
+              </Button>
               <Button variant="outline" size="sm" onClick={handleProbe} disabled={!mediaPath}>
                 探测
               </Button>

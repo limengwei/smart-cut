@@ -22,9 +22,17 @@ export function SubtitleStylePanel({ enabled, style, onToggleEnabled, onChangeSt
 
   return (
     <div className="border-b border-border bg-zinc-900">
-      <button
-        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium"
+      <div
+        className="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-sm font-medium"
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
       >
         <span className="flex items-center gap-2">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -35,7 +43,7 @@ export function SubtitleStylePanel({ enabled, style, onToggleEnabled, onChangeSt
           onCheckedChange={onToggleEnabled}
           onClick={(e) => e.stopPropagation()}
         />
-      </button>
+      </div>
 
       {expanded && (
         <div className="space-y-3 px-3 pb-3">

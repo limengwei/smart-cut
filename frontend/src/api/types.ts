@@ -142,3 +142,8 @@ export interface SubtitleConfig {
   segments: Segment[];
   style: SubtitleStyle;
 }
+
+export interface FileFilter {
+  displayName: string;
+  pattern: string;
+}

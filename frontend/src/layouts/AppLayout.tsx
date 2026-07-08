@@ -1,11 +1,12 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Settings, FolderPlus, Scissors } from "lucide-react";
+import { Settings, FolderPlus, Scissors, Home } from "lucide-react";
 import { cn } from "../lib/utils";
 
 export function AppLayout() {
   const navigate = useNavigate();
 
   const navItems = [
+    { to: "/", label: "首页", icon: Home },
     { to: "/project/new", label: "新建项目", icon: FolderPlus },
     { to: "/settings", label: "设置", icon: Settings },
   ];

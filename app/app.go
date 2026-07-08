@@ -94,6 +94,22 @@ func (a *App) OpenProject(projectPath string) (*model.Project, error) {
 	return project, nil
 }
 
+func (a *App) OpenProjectByID(projectID string) (*model.Project, error) {
+	project, err := a.projectService.OpenProjectByID(projectID)
+	if err != nil {
+		return nil, NewAppError(ErrCodeParam, "打开项目失败", err.Error())
+	}
+
+	a.mu.Lock()
+	a.projects[project.ID] = project
+	if a.mediaServer != nil {
+		a.mediaServer.Register(project.ID, project.Media.Path)
+	}
+	a.mu.Unlock()
+
+	return project, nil
+}
+
 func (a *App) SaveProject(p model.Project) error {
 	err := a.projectService.SaveProject(&p)
 	if err != nil {
@@ -109,12 +125,25 @@ func (a *App) SaveProject(p model.Project) error {
 
 func (a *App) GetProject(projectID string) (*model.Project, error) {
 	a.mu.RLock()
-	defer a.mu.RUnlock()
-
 	project, ok := a.projects[projectID]
-	if !ok {
+	a.mu.RUnlock()
+
+	if ok {
+		return project, nil
+	}
+
+	project, err := a.projectService.OpenProjectByID(projectID)
+	if err != nil {
 		return nil, NewAppError(ErrCodeParam, fmt.Sprintf("项目 %s 未加载", projectID), "")
 	}
+
+	a.mu.Lock()
+	a.projects[project.ID] = project
+	if a.mediaServer != nil {
+		a.mediaServer.Register(project.ID, project.Media.Path)
+	}
+	a.mu.Unlock()
+
 	return project, nil
 }
 

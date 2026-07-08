@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"smart-cut/internal/model"
@@ -97,7 +98,50 @@ func (s *ProjectService) OpenProject(projectPath string) (*model.Project, error)
 	return &project, nil
 }
 
+// OpenProjectByID 通过项目 ID 加载项目
+func (s *ProjectService) OpenProjectByID(projectID string) (*model.Project, error) {
+	projectPath := filepath.Join(s.projectsDir, projectID, "project.json")
+	return s.OpenProject(projectPath)
+}
+
 // GetProjectPath 获取项目文件路径
 func (s *ProjectService) GetProjectPath(projectID string) string {
 	return filepath.Join(s.projectsDir, projectID, "project.json")
+}
+
+// ListProjects 扫描项目目录，返回所有项目列表（按更新时间倒序）
+func (s *ProjectService) ListProjects() ([]*model.Project, error) {
+	entries, err := os.ReadDir(s.projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*model.Project{}, nil
+		}
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+
+	var projects []*model.Project
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectPath := filepath.Join(s.projectsDir, entry.Name(), "project.json")
+		data, err := os.ReadFile(projectPath)
+		if err != nil {
+			continue
+		}
+
+		var project model.Project
+		if err := json.Unmarshal(data, &project); err != nil {
+			continue
+		}
+
+		projects = append(projects, &project)
+	}
+
+	sort.Slice(projects, func(i, j int) bool {
+		return projects[i].UpdatedAt.After(projects[j].UpdatedAt)
+	})
+
+	return projects, nil
 }

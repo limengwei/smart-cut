@@ -23,6 +23,7 @@ interface Props {
   onZoomFit: () => void;
   onSelectSegment: (id: string | null) => void;
   onToggleSegment: (segID: string) => void;
+  onDeleteSegment: (segID: string) => void;
   onDragBoundary: (seg: CutSegment, side: "start" | "end", newMs: number) => void;
   onAddManual: (startMs: number, endMs: number) => void;
 }
@@ -79,6 +80,7 @@ export function Timeline(props: Props) {
             selectedSegmentId={props.selectedSegmentId}
             onSelect={props.onSelectSegment}
             onToggle={props.onToggleSegment}
+            onDelete={props.onDeleteSegment}
             onDragBoundary={props.onDragBoundary}
             onAddManual={props.onAddManual}
           />

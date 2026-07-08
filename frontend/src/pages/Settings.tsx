@@ -5,7 +5,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { useSettingsStore } from "../stores/settings";
-import { probeBinary } from "../api/client";
+import { probeBinary, pickFile, pickDirectory } from "../api/client";
 import type { GlobalSettings } from "../api/types";
 
 export function Settings() {
@@ -71,6 +71,12 @@ export function Settings() {
                   }
                   placeholder={`留空使用系统 PATH`}
                 />
+                <Button variant="outline" size="sm" onClick={async () => {
+                  try {
+                    const path = await pickFile("选择二进制文件", []);
+                    if (path) setForm({ ...form, binaries: { ...form.binaries, [name]: path } });
+                  } catch (e) { console.error("选择文件失败:", e); }
+                }}>浏览</Button>
                 <Button variant="outline" size="sm" onClick={() => handleProbe(name)}>
                   探测
                 </Button>
@@ -96,12 +102,20 @@ export function Settings() {
         <CardContent>
           <div className="space-y-2">
             <Label htmlFor="whisper-model">模型目录</Label>
+            <div className="flex gap-2">
             <Input
               id="whisper-model"
               value={form.whisperModelDir}
               onChange={(e) => setForm({ ...form, whisperModelDir: e.target.value })}
               placeholder="/path/to/models"
             />
+            <Button variant="outline" size="sm" onClick={async () => {
+              try {
+                const path = await pickDirectory("选择模型目录");
+                if (path) setForm({ ...form, whisperModelDir: path });
+              } catch (e) { console.error("选择目录失败:", e); }
+            }}>浏览</Button>
+          </div>
           </div>
         </CardContent>
       </Card>

@@ -9,10 +9,12 @@ declare module "../../bindings/smart-cut/app/app.js" {
     MediaFile,
     WaveformPeaks,
     SubtitleConfig,
+    FileFilter,
   } from "./types";
 
   export function CreateProject(name: string, mediaPath: string): Promise<Project>;
   export function OpenProject(projectPath: string): Promise<Project>;
+  export function OpenProjectByID(projectID: string): Promise<Project>;
   export function SaveProject(p: Project): Promise<void>;
   export function GetProject(projectID: string): Promise<Project>;
 
@@ -37,4 +39,8 @@ declare module "../../bindings/smart-cut/app/app.js" {
   export function GetMediaURL(projectID: string): Promise<string>;
 
   export function GetSubtitleConfig(projectID: string): Promise<SubtitleConfig>;
+
+  export function ListProjects(): Promise<Project[]>;
+  export function PickFile(title: string, filters: FileFilter[]): Promise<string>;
+  export function PickDirectory(title: string): Promise<string>;
 }

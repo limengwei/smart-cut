@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import type { CutList, CutSegment } from "../../api/types";
 import { timeToX, xToTime, clampMs, type Viewport } from "../../lib/timeline";
 
@@ -8,6 +8,7 @@ interface Props {
   selectedSegmentId: string | null;
   onSelect: (id: string | null) => void;
   onToggle: (segID: string) => void;
+  onDelete: (segID: string) => void;
   onDragBoundary: (seg: CutSegment, side: "start" | "end", newMs: number) => void;
   onAddManual: (startMs: number, endMs: number) => void;
 }
@@ -21,11 +22,25 @@ export function CutTrack({
   selectedSegmentId,
   onSelect,
   onToggle,
+  onDelete,
   onDragBoundary,
   onAddManual,
 }: Props) {
   const dragRef = useRef<{ seg: CutSegment; side: "start" | "end" } | null>(null);
   const segments: CutSegment[] = cutList?.segments ?? [];
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedSegmentId && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+          e.preventDefault();
+          onDelete(selectedSegmentId);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedSegmentId, onDelete]);
 
   const handleMouseDownBoundary = (
     e: React.MouseEvent,
@@ -114,6 +129,18 @@ export function CutTrack({
               <span className="pointer-events-none truncate px-2 text-zinc-200">
                 {isRemove ? "✂ 删除" : "▶ 保留"}
               </span>
+              {isSelected && (
+                <button
+                  className="absolute right-7 top-0 flex h-full items-center justify-center px-1 text-zinc-400 hover:text-red-400"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(seg.id);
+                  }}
+                  title="删除此段"
+                >
+                  ×
+                </button>
+              )}
               <div
                 className="absolute right-0 top-0 h-full cursor-ew-resize bg-black/30"
                 style={{ width: HANDLE_WIDTH }}
