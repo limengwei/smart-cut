@@ -6,6 +6,7 @@ import type {
   Segment,
   SubtitleStyle,
   SubtitleConfig,
+  OverlayConfig,
 } from "../api/types";
 
 export type WorkflowStage = "idle" | "transcribing" | "analyzing" | "ready" | "exporting";
@@ -36,9 +37,15 @@ interface WorkbenchStore {
   subtitleStyle: SubtitleStyle | null;
   subtitleConfig: SubtitleConfig | null;
 
+  overlayEnabled: boolean;
+  overlayConfig: OverlayConfig | null;
+
   setSubtitleEnabled: (b: boolean) => void;
   setSubtitleStyle: (s: SubtitleStyle) => void;
   setSubtitleConfig: (c: SubtitleConfig | null) => void;
+
+  setOverlayEnabled: (b: boolean) => void;
+  setOverlayConfig: (c: OverlayConfig | null) => void;
 
   setProjectID: (id: string) => void;
   setTranscript: (t: Transcript | null) => void;
@@ -92,9 +99,15 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   subtitleStyle: null,
   subtitleConfig: null,
 
+  overlayEnabled: false,
+  overlayConfig: null,
+
   setSubtitleEnabled: (b) => set({ subtitleEnabled: b }),
   setSubtitleStyle: (s) => set({ subtitleStyle: s }),
   setSubtitleConfig: (c) => set({ subtitleConfig: c }),
+
+  setOverlayEnabled: (b) => set({ overlayEnabled: b }),
+  setOverlayConfig: (c) => set({ overlayConfig: c }),
 
   setProjectID: (id) => set({ projectID: id }),
   setTranscript: (t) => set({ transcript: t }),
@@ -154,5 +167,7 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
       subtitleEnabled: false,
       subtitleStyle: null,
       subtitleConfig: null,
+      overlayEnabled: false,
+      overlayConfig: null,
     }),
 }));

@@ -3,6 +3,7 @@ import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { Button } from "./ui/button";
 import { formatTimecode } from "../lib/timeline";
 import { RemotionPlayer } from "./RemotionPlayer";
+import { OverlayPlayer } from "./OverlayPlayer";
 import { useWorkbenchStore } from "../stores/workbench";
 
 interface Props {
@@ -35,6 +36,8 @@ export function VideoPreview({
   const videoRef = useRef<HTMLVideoElement>(null);
   const subtitleEnabled = useWorkbenchStore((s) => s.subtitleEnabled);
   const subtitleConfig = useWorkbenchStore((s) => s.subtitleConfig);
+  const overlayEnabled = useWorkbenchStore((s) => s.overlayEnabled);
+  const overlayConfig = useWorkbenchStore((s) => s.overlayConfig);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -82,6 +85,18 @@ export function VideoPreview({
               <div className="pointer-events-none absolute inset-0">
                 <RemotionPlayer
                   config={subtitleConfig}
+                  playheadMs={playheadMs}
+                  durationMs={durationMs}
+                  width={mediaWidth}
+                  height={mediaHeight}
+                  fps={mediaFps}
+                />
+              </div>
+            )}
+            {overlayEnabled && overlayConfig && overlayConfig.items.length > 0 && (
+              <div className="pointer-events-none absolute inset-0">
+                <OverlayPlayer
+                  config={overlayConfig}
                   playheadMs={playheadMs}
                   durationMs={durationMs}
                   width={mediaWidth}
