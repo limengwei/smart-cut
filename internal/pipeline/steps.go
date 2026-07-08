@@ -227,14 +227,21 @@ func (s *ExportStep) Run(ctx *Context, reporter ProgressReporter) error {
 			return fmt.Errorf("export: extract segment %d: %w", i+1, err)
 		}
 
+		subtitlePath := ""
 		if ctx.SubtitleClips != nil {
-			if subtitlePath, ok := ctx.SubtitleClips[segID]; ok {
-				overlayPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%s_overlay.mp4", segID))
-				if err := s.ffmpeg.OverlaySegment(ctx.Cancel, segOutPath, subtitlePath, overlayPath); err != nil {
-					return fmt.Errorf("export: overlay segment %d: %w", i+1, err)
-				}
-				segOutPath = overlayPath
+			subtitlePath = ctx.SubtitleClips[segID]
+		}
+		overlayClipPath := ""
+		if ctx.OverlayClips != nil {
+			overlayClipPath = ctx.OverlayClips[segID]
+		}
+
+		if subtitlePath != "" || overlayClipPath != "" {
+			overlayPath := filepath.Join(tmpDir, fmt.Sprintf("keep_%s_overlay.mp4", segID))
+			if err := s.ffmpeg.OverlaySegmentWithOverlay(ctx.Cancel, segOutPath, subtitlePath, overlayClipPath, overlayPath); err != nil {
+				return fmt.Errorf("export: overlay segment %d: %w", i+1, err)
 			}
+			segOutPath = overlayPath
 		}
 
 		segPaths = append(segPaths, segOutPath)

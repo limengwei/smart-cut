@@ -218,6 +218,7 @@ func (m *mockFFmpeg) OverlaySegment(ctx context.Context, videoPath, subtitlePath
 }
 
 func (m *mockFFmpeg) OverlaySegmentWithOverlay(ctx context.Context, videoPath, subtitlePath, overlayPath, outPath string) error {
+	m.overlayedPaths = append(m.overlayedPaths, outPath)
 	return m.overlayWithOverlayErr
 }
 
